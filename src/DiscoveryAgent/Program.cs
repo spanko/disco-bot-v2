@@ -1,5 +1,4 @@
 using Azure.AI.Projects;
-using Azure.AI.Projects.OpenAI;
 using Azure.Identity;
 using Azure.Search.Documents;
 using Azure.Storage.Blobs;
@@ -36,15 +35,6 @@ var host = new HostBuilder()
         // Endpoint format: https://<resource>.services.ai.azure.com/api/projects/<project>
         services.AddSingleton(_ =>
             new AIProjectClient(new Uri(settings.ProjectEndpoint), credential));
-
-        // ── Foundry OpenAI Client (Responses API) ───────────────────────
-        // Split from AIProjectClient — used for conversations and responses.
-        // Requires separate registration because it's the runtime call path.
-        services.AddSingleton(sp =>
-        {
-            var projectClient = sp.GetRequiredService<AIProjectClient>();
-            return projectClient.OpenAI;
-        });
 
         // ── BYO Cosmos DB ───────────────────────────────────────────────
         // Two databases:

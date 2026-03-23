@@ -22,7 +22,7 @@ namespace DiscoveryAgent.Handlers;
 /// </summary>
 public class ConversationHandler : IConversationHandler
 {
-    private readonly ProjectOpenAIClient _openAIClient;
+    private readonly AIProjectClient _projectClient;
     private readonly IAgentManager _agentManager;
     private readonly IKnowledgeStore _knowledgeStore;
     private readonly IUserProfileService _userProfiles;
@@ -31,7 +31,7 @@ public class ConversationHandler : IConversationHandler
     private readonly ILogger<ConversationHandler> _logger;
 
     public ConversationHandler(
-        ProjectOpenAIClient openAIClient,
+        AIProjectClient projectClient,
         IAgentManager agentManager,
         IKnowledgeStore knowledgeStore,
         IUserProfileService userProfiles,
@@ -39,7 +39,7 @@ public class ConversationHandler : IConversationHandler
         DiscoveryBotSettings settings,
         ILogger<ConversationHandler> logger)
     {
-        _openAIClient = openAIClient;
+        _projectClient = projectClient;
         _agentManager = agentManager;
         _knowledgeStore = knowledgeStore;
         _userProfiles = userProfiles;
@@ -78,7 +78,7 @@ public class ConversationHandler : IConversationHandler
                 }
             }
 
-            var conversation = await _openAIClient.Conversations
+            var conversation = await _projectClient.OpenAI.Conversations
                 .CreateProjectConversationAsync(creationOptions, ct);
             conversationId = conversation.Value.Id;
 
@@ -91,7 +91,7 @@ public class ConversationHandler : IConversationHandler
         // ─────────────────────────────────────────────────────────────
         // GetProjectResponsesClientForAgent binds the agent + conversation
         // so every call automatically maintains state.
-        var responseClient = _openAIClient.GetProjectResponsesClientForAgent(
+        var responseClient = _projectClient.OpenAI.GetProjectResponsesClientForAgent(
             _agentManager.AgentName);
 
         _logger.LogInformation(
