@@ -1,0 +1,16 @@
+name: discovery-chatbot-v2
+metadata:
+  template: disco-bot-v2
+services:
+  api:
+    project: src/DiscoveryAgent
+    language: csharp
+    host: function
+  web:
+    project: web
+    language: html
+    host: staticwebapp
+hooks:
+  postprovision:
+    shell: sh
+    run: infra/scripts/post-provision.sh

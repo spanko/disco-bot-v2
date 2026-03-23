@@ -1,0 +1,23 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+## Azure Functions
+local.settings.json
+
+## azd
+.azure/
+
+## IDE
+.idea/
+.vscode/
+
+## OS
+.DS_Store
+Thumbs.db
+
+## Build artifacts
+ctemp*
