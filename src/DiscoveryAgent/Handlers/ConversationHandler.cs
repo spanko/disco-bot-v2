@@ -5,6 +5,7 @@ using DiscoveryAgent.Core.Interfaces;
 using DiscoveryAgent.Core.Models;
 using Microsoft.Extensions.Logging;
 using OpenAI.Responses;
+using System.Text.Json;
 
 namespace DiscoveryAgent.Handlers;
 
@@ -107,32 +108,60 @@ public class ConversationHandler : IConversationHandler
             responseOptions,
             ct);
 
-        var outputText = response.Value.GetOutputText();
-
-        _logger.LogInformation(
-            "Response received: {ResponseId}, Output={OutputLen} chars, Usage=({Input}+{Output} tokens)",
-            response.Value.Id,
-            outputText.Length,
-            response.Value.Usage?.InputTokens ?? 0,
-            response.Value.Usage?.OutputTokens ?? 0);
-
         // ─────────────────────────────────────────────────────────────
-        // Step 3: Process any function tool calls in the response
+        // Step 3: Process function tool calls in a loop
         // ─────────────────────────────────────────────────────────────
+        // The Responses API returns function_call items in the output
+        // when the agent wants to invoke a tool. We execute the function
+        // locally, submit the result, and re-call until no more tool
+        // calls remain. This replaces v1's polling loop entirely.
         var extractedKnowledgeIds = new List<string>();
+        var currentResponse = response.Value;
 
-        // The Responses API includes tool call outputs inline in the response.
-        // If the agent called extract_knowledge, store_user_profile, etc.,
-        // those calls are in response.Value.Output as FunctionCallOutputItem.
-        // 
-        // NOTE: For the GA API, function tools can be configured as
-        // "auto-executed" by the service, or handled client-side.
-        // The implementation below handles the client-side pattern.
-        // This will be fleshed out in WP-2 when we wire up the tool definitions.
+        while (HasFunctionCalls(currentResponse))
+        {
+            var toolOutputs = new List<ResponseItem>();
 
-        // TODO: Iterate response.Value.Output for function call items
-        // and process extract_knowledge, store_user_profile, etc.
-        // For now, knowledge extraction happens post-hoc in a future pass.
+            // Collect all output items (including function calls) as input for next round
+            foreach (var item in currentResponse.OutputItems)
+            {
+                toolOutputs.Add(item);
+
+                if (item is FunctionCallResponseItem functionCall)
+                {
+                    _logger.LogInformation("Processing tool call: {Function}", functionCall.FunctionName);
+
+                    var result = await ExecuteFunctionAsync(
+                        functionCall, request.UserId, conversationId, request.ContextId);
+
+                    toolOutputs.Add(
+                        ResponseItem.CreateFunctionCallOutputItem(
+                            functionCall.CallId,
+                            result.Output));
+
+                    if (result.KnowledgeIds is not null)
+                        extractedKnowledgeIds.AddRange(result.KnowledgeIds);
+                }
+            }
+
+            // Submit tool results and get the next response
+            var nextResponse = await responseClient.CreateResponseAsync(
+                toolOutputs,
+                new ResponseCreationOptions
+                {
+                    AgentConversationId = conversationId,
+                    PreviousResponseId = currentResponse.Id,
+                },
+                ct);
+
+            currentResponse = nextResponse.Value;
+
+            _logger.LogInformation(
+                "Follow-up response: {ResponseId}, Output={OutputLen} chars",
+                currentResponse.Id, currentResponse.GetOutputText().Length);
+        }
+
+        var outputText = currentResponse.GetOutputText();
 
         return new ConversationResponse(
             ConversationId: conversationId,
@@ -152,4 +181,106 @@ public class ConversationHandler : IConversationHandler
         Key Questions: {string.Join("; ", context.KeyQuestions)}
         Please begin the discovery session following your instructions.
         """;
+
+    // ─── Function dispatch ───────────────────────────────────────────
+
+    private static bool HasFunctionCalls(ResponseResult response) =>
+        response.OutputItems.Any(item => item is FunctionCallResponseItem);
+
+    private async Task<ToolCallResult> ExecuteFunctionAsync(
+        FunctionCallResponseItem functionCall,
+        string userId,
+        string conversationId,
+        string? contextId)
+    {
+        try
+        {
+            return functionCall.FunctionName switch
+            {
+                "extract_knowledge" => await HandleKnowledgeExtraction(
+                    functionCall.FunctionArguments, userId, conversationId, contextId ?? "default"),
+
+                "store_user_profile" => await HandleProfileUpdate(
+                    functionCall.FunctionArguments, userId),
+
+                "complete_questionnaire_section" => HandleSectionComplete(
+                    functionCall.FunctionArguments),
+
+                _ => new ToolCallResult(
+                    JsonSerializer.Serialize(new { error = $"Unknown function: {functionCall.FunctionName}" }),
+                    null)
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Tool call failed: {Function}", functionCall.FunctionName);
+            return new ToolCallResult(
+                JsonSerializer.Serialize(new { error = ex.Message }),
+                null);
+        }
+    }
+
+    private async Task<ToolCallResult> HandleKnowledgeExtraction(
+        string arguments, string userId, string conversationId, string contextId)
+    {
+        var args = JsonSerializer.Deserialize<KnowledgeExtractionArgs>(arguments,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        if (args?.Items is null) return new("{}", null);
+
+        var ids = new List<string>();
+        foreach (var item in args.Items)
+        {
+            var ki = new KnowledgeItem
+            {
+                Content = item.Content,
+                Category = Enum.Parse<KnowledgeCategory>(item.Category, true),
+                Confidence = item.Confidence,
+                SourceUserId = userId,
+                SourceConversationId = conversationId,
+                RelatedContextId = contextId,
+                Tags = item.Tags ?? [],
+            };
+
+            var storedId = await _knowledgeStore.StoreAsync(ki);
+            ids.Add(storedId);
+        }
+
+        return new(
+            JsonSerializer.Serialize(new { stored = ids.Count, ids }),
+            ids);
+    }
+
+    private async Task<ToolCallResult> HandleProfileUpdate(string arguments, string userId)
+    {
+        var args = JsonSerializer.Deserialize<ProfileUpdateArgs>(arguments,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        if (args is null) return new("{}", null);
+
+        var profile = new UserProfile
+        {
+            UserId = userId,
+            RoleName = args.RoleName,
+            Tone = Enum.TryParse<CommunicationTone>(args.Tone, true, out var t) ? t : CommunicationTone.Conversational,
+            DetailLevel = Enum.TryParse<DetailLevel>(args.DetailLevel, true, out var d) ? d : DetailLevel.Detailed,
+            PriorityTopics = args.PriorityTopics ?? [],
+            QuestionComplexity = Enum.TryParse<QuestionComplexity>(
+                args.QuestionComplexity?.Replace("-", ""), true, out var q) ? q : QuestionComplexity.Detailed,
+        };
+
+        await _userProfiles.UpsertAsync(profile);
+
+        return new(
+            JsonSerializer.Serialize(new { status = "profile_updated", role = args.RoleName }),
+            null);
+    }
+
+    private static ToolCallResult HandleSectionComplete(string arguments) =>
+        new(JsonSerializer.Serialize(new { status = "section_completed" }), null);
+
+    // ─── Deserialization helpers ─────────────────────────────────────
+
+    private record ToolCallResult(string Output, List<string>? KnowledgeIds);
+    private record KnowledgeExtractionArgs(List<KnowledgeItemArg>? Items);
+    private record KnowledgeItemArg(string Content, string Category, double Confidence, List<string>? Tags);
+    private record ProfileUpdateArgs(string RoleName, string? Tone, string? DetailLevel, List<string>? PriorityTopics, string? QuestionComplexity);
 }

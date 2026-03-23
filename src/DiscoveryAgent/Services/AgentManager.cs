@@ -3,6 +3,7 @@ using DiscoveryAgent.Configuration;
 using DiscoveryAgent.Core.Interfaces;
 using DiscoveryAgent.Core.Models;
 using Microsoft.Extensions.Logging;
+using OpenAI.Responses;
 
 namespace DiscoveryAgent.Services;
 
@@ -54,16 +55,25 @@ public class AgentManager : IAgentManager
 
         try
         {
+            // Build the agent definition with model, instructions, and tools.
+            // Tools are ResponseTool instances that the Responses API will invoke.
+            var definition = new PromptAgentDefinition(_settings.ModelDeploymentName)
+            {
+                Instructions = instructions,
+            };
+
+            // Add each tool to the definition
+            foreach (var tool in toolDefinitions)
+            {
+                definition.Tools.Add(tool);
+            }
+
             // CreateVersion creates a new version of the named agent.
             // If the agent doesn't exist yet, it creates both the agent and version.
             // The agent is then referenced by name in Responses API calls.
-            var agentVersion = await _projectClient.Agents.CreateVersionAsync(
+            var agentVersion = await _projectClient.Agents.CreateAgentVersionAsync(
                 agentName: _settings.AgentName,
-                definition: new PromptAgentDefinition(_settings.ModelDeploymentName)
-                {
-                    Instructions = instructions,
-                    Tools = toolDefinitions,
-                },
+                options: new(definition),
                 cancellationToken: ct);
 
             _logger.LogInformation("Agent version created: Name={Name}, Version={Version}",
@@ -132,15 +142,87 @@ public class AgentManager : IAgentManager
 
     /// <summary>
     /// Builds function tool definitions for the agent.
-    /// These are the same three tools from v1, but registered through the
-    /// new PromptAgentDefinition.Tools collection.
+    /// These are the same three tools from v1, registered through the
+    /// new PromptAgentDefinition.Tools collection as ResponseTool instances.
+    /// 
+    /// In the Responses API, the agent calls these functions during response
+    /// generation. The ConversationHandler detects FunctionCallResponseItem
+    /// in the output, executes the function locally, and submits the result
+    /// back via ResponseItem.CreateFunctionCallOutputItem.
     /// </summary>
-    private List<AgentToolDefinition> BuildToolDefinitions()
+    private static List<ResponseTool> BuildToolDefinitions()
     {
-        // TODO: Convert to AgentToolDefinition format once SDK types stabilize.
-        // For now, the function tool schema is the same JSON shape as v1.
-        // The Responses API handles tool calls inline — no more polling loop.
-        return [];
+        return
+        [
+            ResponseTool.CreateFunctionTool(
+                name: "extract_knowledge",
+                description: "Extract and categorize knowledge items from the user's response. " +
+                    "Call this after each substantive user message to capture facts, opinions, " +
+                    "decisions, requirements, and concerns.",
+                parameters: BinaryData.FromObjectAsJson(new
+                {
+                    type = "object",
+                    properties = new
+                    {
+                        items = new
+                        {
+                            type = "array",
+                            items = new
+                            {
+                                type = "object",
+                                properties = new
+                                {
+                                    content = new { type = "string", description = "The knowledge statement" },
+                                    category = new { type = "string", @enum = new[] { "fact", "opinion", "decision", "requirement", "concern" } },
+                                    confidence = new { type = "number", description = "0.0 to 1.0" },
+                                    tags = new { type = "array", items = new { type = "string" } }
+                                },
+                                required = new[] { "content", "category", "confidence" }
+                            }
+                        }
+                    },
+                    required = new[] { "items" }
+                }),
+                strictSchemaEnabled: false
+            ),
+
+            ResponseTool.CreateFunctionTool(
+                name: "store_user_profile",
+                description: "Store or update the user's role profile based on what they've shared. " +
+                    "Call this after the role discovery phase of conversation.",
+                parameters: BinaryData.FromObjectAsJson(new
+                {
+                    type = "object",
+                    properties = new
+                    {
+                        roleName = new { type = "string", description = "The user's role title" },
+                        tone = new { type = "string", @enum = new[] { "formal", "conversational", "technical" } },
+                        detailLevel = new { type = "string", @enum = new[] { "executive", "detailed", "technical" } },
+                        priorityTopics = new { type = "array", items = new { type = "string" } },
+                        questionComplexity = new { type = "string", @enum = new[] { "high-level", "detailed", "deep-dive" } }
+                    },
+                    required = new[] { "roleName" }
+                }),
+                strictSchemaEnabled: false
+            ),
+
+            ResponseTool.CreateFunctionTool(
+                name: "complete_questionnaire_section",
+                description: "Mark a questionnaire section as complete and summarize findings.",
+                parameters: BinaryData.FromObjectAsJson(new
+                {
+                    type = "object",
+                    properties = new
+                    {
+                        sectionId = new { type = "string" },
+                        summary = new { type = "string" },
+                        keyFindings = new { type = "array", items = new { type = "string" } }
+                    },
+                    required = new[] { "sectionId", "summary" }
+                }),
+                strictSchemaEnabled: false
+            ),
+        ];
     }
 
     private static string GetDefaultSystemPrompt() => """
