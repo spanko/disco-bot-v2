@@ -7,6 +7,7 @@
     <RootNamespace>DiscoveryAgent</RootNamespace>
     <OutputType>Exe</OutputType>
     <UserSecretsId>disco-bot-v2-dev</UserSecretsId>
+    <NoWarn>$(NoWarn);OPENAI001</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -39,7 +40,7 @@
     <PackageReference Include="Microsoft.Bot.Builder.Integration.AspNet.Core" Version="4.*" />
 
     <!-- Utilities -->
-    <PackageReference Include="System.Text.Json" Version="9.*" />
+    <PackageReference Include="System.Text.Json" Version="10.*" />
   </ItemGroup>
 
   <ItemGroup>

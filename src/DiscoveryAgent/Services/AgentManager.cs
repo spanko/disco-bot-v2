@@ -1,4 +1,7 @@
+using System.ClientModel;
+using System.ClientModel.Primitives;
 using Azure.AI.Projects;
+using Azure.AI.Projects.OpenAI;
 using DiscoveryAgent.Configuration;
 using DiscoveryAgent.Core.Interfaces;
 using DiscoveryAgent.Core.Models;
@@ -71,13 +74,19 @@ public class AgentManager : IAgentManager
             // CreateVersion creates a new version of the named agent.
             // If the agent doesn't exist yet, it creates both the agent and version.
             // The agent is then referenced by name in Responses API calls.
+            //
+            // NOTE: The beta SDK has a type mismatch between Azure.AI.Projects.OpenAI
+            // (PromptAgentDefinition) and Azure.AI.Projects.Agents (AgentVersionCreationOptions).
+            // We use the BinaryContent overload to bridge them.
+            var definitionJson = ModelReaderWriter.Write(definition, new ModelReaderWriterOptions("J"));
+            var bodyJson = BinaryData.FromObjectAsJson(new { definition = definitionJson });
             var agentVersion = await _projectClient.Agents.CreateAgentVersionAsync(
                 agentName: _settings.AgentName,
-                options: new(definition),
-                cancellationToken: ct);
+                content: BinaryContent.Create(bodyJson),
+                foundryFeatures: null,
+                options: new RequestOptions { CancellationToken = ct });
 
-            _logger.LogInformation("Agent version created: Name={Name}, Version={Version}",
-                agentVersion.Value.Name, agentVersion.Value.Version);
+            _logger.LogInformation("Agent version created for: {Name}", _settings.AgentName);
 
             _initialized = true;
         }
@@ -155,11 +164,11 @@ public class AgentManager : IAgentManager
         return
         [
             ResponseTool.CreateFunctionTool(
-                name: "extract_knowledge",
-                description: "Extract and categorize knowledge items from the user's response. " +
+                functionName: "extract_knowledge",
+                functionDescription: "Extract and categorize knowledge items from the user's response. " +
                     "Call this after each substantive user message to capture facts, opinions, " +
                     "decisions, requirements, and concerns.",
-                parameters: BinaryData.FromObjectAsJson(new
+                functionParameters: BinaryData.FromObjectAsJson(new
                 {
                     type = "object",
                     properties = new
@@ -183,14 +192,14 @@ public class AgentManager : IAgentManager
                     },
                     required = new[] { "items" }
                 }),
-                strictSchemaEnabled: false
+                strictModeEnabled: false
             ),
 
             ResponseTool.CreateFunctionTool(
-                name: "store_user_profile",
-                description: "Store or update the user's role profile based on what they've shared. " +
+                functionName: "store_user_profile",
+                functionDescription: "Store or update the user's role profile based on what they've shared. " +
                     "Call this after the role discovery phase of conversation.",
-                parameters: BinaryData.FromObjectAsJson(new
+                functionParameters: BinaryData.FromObjectAsJson(new
                 {
                     type = "object",
                     properties = new
@@ -203,13 +212,13 @@ public class AgentManager : IAgentManager
                     },
                     required = new[] { "roleName" }
                 }),
-                strictSchemaEnabled: false
+                strictModeEnabled: false
             ),
 
             ResponseTool.CreateFunctionTool(
-                name: "complete_questionnaire_section",
-                description: "Mark a questionnaire section as complete and summarize findings.",
-                parameters: BinaryData.FromObjectAsJson(new
+                functionName: "complete_questionnaire_section",
+                functionDescription: "Mark a questionnaire section as complete and summarize findings.",
+                functionParameters: BinaryData.FromObjectAsJson(new
                 {
                     type = "object",
                     properties = new
@@ -220,7 +229,7 @@ public class AgentManager : IAgentManager
                     },
                     required = new[] { "sectionId", "summary" }
                 }),
-                strictSchemaEnabled: false
+                strictModeEnabled: false
             ),
         ];
     }

@@ -94,17 +94,17 @@ public class ConversationHandler : IConversationHandler
         var responseClient = _openAIClient.GetProjectResponsesClientForAgent(
             _agentManager.AgentName);
 
-        var responseOptions = new ResponseCreationOptions
-        {
-            AgentConversationId = conversationId,
-        };
-
         _logger.LogInformation(
             "Creating response: Agent={Agent}, Conversation={ConversationId}, Input={InputLen} chars",
             _agentManager.AgentName, conversationId, request.Message.Length);
 
+        var responseOptions = new CreateResponseOptions
+        {
+            ConversationOptions = new ResponseConversationOptions(conversationId),
+        };
+        responseOptions.InputItems.Add(ResponseItem.CreateUserMessageItem(request.Message));
+
         var response = await responseClient.CreateResponseAsync(
-            [ResponseItem.CreateUserMessageItem(request.Message)],
             responseOptions,
             ct);
 
@@ -145,13 +145,16 @@ public class ConversationHandler : IConversationHandler
             }
 
             // Submit tool results and get the next response
+            var followUpOptions = new CreateResponseOptions
+            {
+                ConversationOptions = new ResponseConversationOptions(conversationId),
+                PreviousResponseId = currentResponse.Id,
+            };
+            foreach (var output in toolOutputs)
+                followUpOptions.InputItems.Add(output);
+
             var nextResponse = await responseClient.CreateResponseAsync(
-                toolOutputs,
-                new ResponseCreationOptions
-                {
-                    AgentConversationId = conversationId,
-                    PreviousResponseId = currentResponse.Id,
-                },
+                followUpOptions,
                 ct);
 
             currentResponse = nextResponse.Value;
@@ -198,13 +201,13 @@ public class ConversationHandler : IConversationHandler
             return functionCall.FunctionName switch
             {
                 "extract_knowledge" => await HandleKnowledgeExtraction(
-                    functionCall.FunctionArguments, userId, conversationId, contextId ?? "default"),
+                    functionCall.FunctionArguments.ToString(), userId, conversationId, contextId ?? "default"),
 
                 "store_user_profile" => await HandleProfileUpdate(
-                    functionCall.FunctionArguments, userId),
+                    functionCall.FunctionArguments.ToString(), userId),
 
                 "complete_questionnaire_section" => HandleSectionComplete(
-                    functionCall.FunctionArguments),
+                    functionCall.FunctionArguments.ToString()),
 
                 _ => new ToolCallResult(
                     JsonSerializer.Serialize(new { error = $"Unknown function: {functionCall.FunctionName}" }),
