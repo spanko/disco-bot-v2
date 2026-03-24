@@ -1,6 +1,6 @@
 using Azure.AI.Extensions.OpenAI;
 using Azure.AI.Projects;
-using Azure.AI.Projects.OpenAI;
+// using Azure.AI.Projects.OpenAI; // Removed: types now come from Azure.AI.Extensions.OpenAI
 using DiscoveryAgent.Configuration;
 using DiscoveryAgent.Core.Interfaces;
 using DiscoveryAgent.Core.Models;
