@@ -43,7 +43,7 @@ public class ConversationFunction
         catch (Exception ex)
         {
             _logger.LogError(ex, "Conversation failed");
-            return new ObjectResult(new { error = ex.Message, type = ex.GetType().FullName, stack = ex.StackTrace, inner = ex.InnerException?.Message }) { StatusCode = 500 };
+            return new ObjectResult(new { error = "Internal error" }) { StatusCode = 500 };
         }
     }
 }
