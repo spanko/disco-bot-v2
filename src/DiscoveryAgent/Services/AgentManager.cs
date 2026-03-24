@@ -1,10 +1,10 @@
 using Azure.AI.Projects;
-using Azure.AI.Extensions.OpenAI;
 using DiscoveryAgent.Configuration;
 using DiscoveryAgent.Core.Interfaces;
 using DiscoveryAgent.Core.Models;
 using Microsoft.Extensions.Logging;
 using OpenAI.Responses;
+using Azure.AI.Projects.Agents;
 
 namespace DiscoveryAgent.Services;
 
@@ -29,13 +29,14 @@ public class AgentManager : IAgentManager
     public string AgentName => _settings.AgentName;
 
     /// <summary>
-    /// Returns an AgentReference for the current agent version.
-    /// Used by ConversationHandler to bind responses to this agent.
+    /// The resolved agent name after initialization (from CreateAgentVersion response).
     /// </summary>
-    public AgentReference GetAgentReference() =>
-        _resolvedAgentName is not null && _resolvedAgentVersion is not null
-            ? new AgentReference(name: _resolvedAgentName, version: _resolvedAgentVersion)
-            : new AgentReference(name: _settings.AgentName);
+    public string? ResolvedAgentName => _resolvedAgentName;
+
+    /// <summary>
+    /// The resolved agent version string after initialization.
+    /// </summary>
+    public string? ResolvedAgentVersion => _resolvedAgentVersion;
 
     public AgentManager(
         AIProjectClient projectClient,
@@ -62,33 +63,31 @@ public class AgentManager : IAgentManager
         var instructions = await GetInstructionsAsync();
         var toolDefinitions = BuildToolDefinitions();
 
-        _logger.LogInformation("Creating/updating agent version: Name={Name}, Model={Model}, Instructions={Len} chars, Tools={ToolCount}",
+        _logger.LogInformation(
+            "Creating/updating agent version: Name={Name}, Model={Model}, Instructions={Len} chars, Tools={ToolCount}",
             _settings.AgentName, _settings.ModelDeploymentName, instructions.Length, toolDefinitions.Count);
 
         try
         {
-            // Build the agent definition with model, instructions, and tools.
-            // Tools are ResponseTool instances that the Responses API will invoke.
+            // PromptAgentDefinition is in Azure.AI.Projects (2.0.0-beta.2).
             var definition = new PromptAgentDefinition(_settings.ModelDeploymentName)
             {
                 Instructions = instructions,
             };
 
-            // Add each tool to the definition
             foreach (var tool in toolDefinitions)
             {
                 definition.Tools.Add(tool);
             }
 
-            // CreateAgentVersionAsync with the strongly-typed overload.
-            // Passing `new(definition)` creates an AgentVersionCreationOptions
-            // from the PromptAgentDefinition. This replaces the BinaryContent
-            // workaround that was silently failing in the beta SDK.
-            var agentVersion = await _projectClient.Agents.CreateAgentVersionAsync(
+            // Strongly-typed overload: options: new(definition) creates
+            // AgentVersionCreationOptions from the PromptAgentDefinition.
+            var agentVersionResult = await _projectClient.Agents.CreateAgentVersionAsync(
                 agentName: _settings.AgentName,
                 options: new(definition),
                 cancellationToken: ct);
 
+            var agentVersion = agentVersionResult.Value;
             _resolvedAgentName = agentVersion.Name;
             _resolvedAgentVersion = agentVersion.Version;
 
@@ -159,13 +158,6 @@ public class AgentManager : IAgentManager
 
     /// <summary>
     /// Builds function tool definitions for the agent.
-    /// These are the same three tools from v1, registered through the
-    /// new PromptAgentDefinition.Tools collection as ResponseTool instances.
-    /// 
-    /// In the Responses API, the agent calls these functions during response
-    /// generation. The ConversationHandler detects FunctionCallResponseItem
-    /// in the output, executes the function locally, and submits the result
-    /// back via ResponseItem.CreateFunctionCallOutputItem.
     /// </summary>
     private static List<ResponseTool> BuildToolDefinitions()
     {
