@@ -24,11 +24,10 @@ var host = new HostBuilder()
         services.AddSingleton(settings);
 
         // ── Azure Credential ────────────────────────────────────────────
-        // Use ManagedIdentityCredential in production for security and perf.
-        // DefaultAzureCredential is fine for local dev (falls through to az login).
-        var credential = context.HostingEnvironment.IsDevelopment()
-            ? new DefaultAzureCredential() as Azure.Core.TokenCredential
-            : new ManagedIdentityCredential() as Azure.Core.TokenCredential;
+        // DefaultAzureCredential handles both scenarios:
+        // - Local dev: falls through to az login / VS credential
+        // - Production: uses managed identity automatically
+        var credential = new DefaultAzureCredential();
 
         // ── Foundry Project Client (GA SDK) ─────────────────────────────
         // This is the main entry point for agent management.
