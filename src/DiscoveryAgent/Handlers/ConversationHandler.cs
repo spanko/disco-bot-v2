@@ -143,11 +143,8 @@ public class ConversationHandler : IConversationHandler
             }
 
             // Submit tool results — conversation is already bound at client level.
-            // Use parameterless constructor + PreviousResponseId for chaining.
-            var followUpOptions = new CreateResponseOptions
-            {
-                PreviousResponseId = currentResponse.Id,
-            };
+            // Do NOT set PreviousResponseId; the conversation binding provides continuity.
+            var followUpOptions = new CreateResponseOptions();
             foreach (var output in toolOutputs)
                 followUpOptions.InputItems.Add(output);
 
