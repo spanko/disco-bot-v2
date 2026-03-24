@@ -90,22 +90,21 @@ public class ConversationHandler : IConversationHandler
         // ─────────────────────────────────────────────────────────────
         // Step 2: Generate response via Responses API
         // ─────────────────────────────────────────────────────────────
+        // Bind BOTH agent and conversation at client level — the model
+        // comes from the agent definition, conversation is automatic.
         var responseClient = _projectClient.OpenAI.GetProjectResponsesClientForAgent(
-            _agentManager.AgentName);
+            defaultAgent: _agentManager.AgentName,
+            defaultConversationId: conversationId);
 
         _logger.LogInformation(
             "Creating response: Agent={Agent}, Conversation={ConversationId}, Input={InputLen} chars",
             _agentManager.AgentName, conversationId, request.Message.Length);
 
-        // CreateResponseOptions constructor: (string conversationId, IEnumerable<ResponseItem> inputItems)
-        // This is the Azure.AI.Extensions.OpenAI 2.0.0-beta.1 signature.
-        var responseOptions = new CreateResponseOptions(
-            conversationId,
-            [ResponseItem.CreateUserMessageItem(request.Message)]);
+        var responseOptions = new CreateResponseOptions();
+        responseOptions.InputItems.Add(ResponseItem.CreateUserMessageItem(request.Message));
 
         var response = await responseClient.CreateResponseAsync(
-            responseOptions,
-            ct);
+            responseOptions, ct);
 
         // ─────────────────────────────────────────────────────────────
         // Step 3: Process function tool calls in a loop
@@ -143,16 +142,17 @@ public class ConversationHandler : IConversationHandler
                 }
             }
 
-            // Submit tool results — use the constructor with conversation ID + items,
-            // then set PreviousResponseId to chain the follow-up.
-            var followUpOptions = new CreateResponseOptions(conversationId, toolOutputs)
+            // Submit tool results — conversation is already bound at client level.
+            // Use parameterless constructor + PreviousResponseId for chaining.
+            var followUpOptions = new CreateResponseOptions
             {
                 PreviousResponseId = currentResponse.Id,
             };
+            foreach (var output in toolOutputs)
+                followUpOptions.InputItems.Add(output);
 
             var nextResponse = await responseClient.CreateResponseAsync(
-                followUpOptions,
-                ct);
+                followUpOptions, ct);
 
             currentResponse = nextResponse.Value;
 
