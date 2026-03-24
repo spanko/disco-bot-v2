@@ -90,11 +90,15 @@ public class ConversationHandler : IConversationHandler
         // ─────────────────────────────────────────────────────────────
         // Step 2: Generate response via Responses API
         // ─────────────────────────────────────────────────────────────
-        // Bind BOTH agent and conversation at client level — the model
-        // comes from the agent definition, conversation is automatic.
-        var responseClient = _projectClient.OpenAI.GetProjectResponsesClientForAgent(
+        // Two clients needed (conversation + previousResponseId conflict):
+        //   - conversationClient: binds agent + conversation for the first call
+        //   - agentClient: binds agent only, uses previousResponseId for tool follow-ups
+        var conversationClient = _projectClient.OpenAI.GetProjectResponsesClientForAgent(
             defaultAgent: _agentManager.AgentName,
             defaultConversationId: conversationId);
+
+        var agentClient = _projectClient.OpenAI.GetProjectResponsesClientForAgent(
+            defaultAgent: _agentManager.AgentName);
 
         _logger.LogInformation(
             "Creating response: Agent={Agent}, Conversation={ConversationId}, Input={InputLen} chars",
@@ -103,27 +107,28 @@ public class ConversationHandler : IConversationHandler
         var responseOptions = new CreateResponseOptions();
         responseOptions.InputItems.Add(ResponseItem.CreateUserMessageItem(request.Message));
 
-        var response = await responseClient.CreateResponseAsync(
+        // First call uses conversation-bound client (persists to Cosmos)
+        var response = await conversationClient.CreateResponseAsync(
             responseOptions, ct);
 
         // ─────────────────────────────────────────────────────────────
         // Step 3: Process function tool calls in a loop
         // ─────────────────────────────────────────────────────────────
-        // The Responses API returns function_call items in the output
-        // when the agent wants to invoke a tool. We execute the function
-        // locally, submit the result, and re-call until no more tool
-        // calls remain. This replaces v1's polling loop entirely.
+        // Following the Foundry reference pattern:
+        // - Collect ALL output items + function call outputs into inputItems
+        // - Chain with previousResponseId using the agent-only client
+        // - Loop until no more function calls remain
         var extractedKnowledgeIds = new List<string>();
         var currentResponse = response.Value;
+        string? previousResponseId = currentResponse.Id;
 
         while (HasFunctionCalls(currentResponse))
         {
-            var toolOutputs = new List<ResponseItem>();
+            var inputItems = new List<ResponseItem>();
 
-            // Collect all output items (including function calls) as input for next round
             foreach (var item in currentResponse.OutputItems)
             {
-                toolOutputs.Add(item);
+                inputItems.Add(item);
 
                 if (item is FunctionCallResponseItem functionCall)
                 {
@@ -132,7 +137,7 @@ public class ConversationHandler : IConversationHandler
                     var result = await ExecuteFunctionAsync(
                         functionCall, request.UserId, conversationId, request.ContextId);
 
-                    toolOutputs.Add(
+                    inputItems.Add(
                         ResponseItem.CreateFunctionCallOutputItem(
                             functionCall.CallId,
                             result.Output));
@@ -142,16 +147,14 @@ public class ConversationHandler : IConversationHandler
                 }
             }
 
-            // Submit tool results — conversation is already bound at client level.
-            // Do NOT set PreviousResponseId; the conversation binding provides continuity.
-            var followUpOptions = new CreateResponseOptions();
-            foreach (var output in toolOutputs)
-                followUpOptions.InputItems.Add(output);
-
-            var nextResponse = await responseClient.CreateResponseAsync(
-                followUpOptions, ct);
+            // Tool follow-ups use agent-only client + previousResponseId
+            var nextResponse = await agentClient.CreateResponseAsync(
+                previousResponseId: previousResponseId,
+                inputItems: inputItems,
+                cancellationToken: ct);
 
             currentResponse = nextResponse.Value;
+            previousResponseId = currentResponse.Id;
 
             _logger.LogInformation(
                 "Follow-up response: {ResponseId}, Output={OutputLen} chars",
