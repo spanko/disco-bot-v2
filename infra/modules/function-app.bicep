@@ -34,7 +34,10 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
     siteConfig: {
       linuxFxVersion: 'DOTNET-ISOLATED|9.0'
       appSettings: [
-        { name: 'AzureWebJobsStorage', value: 'DefaultEndpointsProtocol=https;AccountName=${funcStorage.name};EndpointSuffix=core.windows.net' }
+        // Managed identity–based storage binding (no connection string).
+        // Requires Storage Blob Data Owner + Storage Queue Data Contributor
+        // on funcStorage for the Function App's managed identity.
+        { name: 'AzureWebJobsStorage__accountName', value: funcStorage.name }
         { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
         { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'dotnet-isolated' }
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsightsConnectionString }

@@ -1,9 +1,9 @@
 using Azure.AI.Extensions.OpenAI;
 using Azure.AI.Projects;
-// using Azure.AI.Projects.OpenAI; // Removed: types now come from Azure.AI.Extensions.OpenAI
 using DiscoveryAgent.Configuration;
 using DiscoveryAgent.Core.Interfaces;
 using DiscoveryAgent.Core.Models;
+using DiscoveryAgent.Services;
 using Microsoft.Extensions.Logging;
 using OpenAI.Responses;
 using System.Text.Json;
@@ -90,20 +90,23 @@ public class ConversationHandler : IConversationHandler
         // ─────────────────────────────────────────────────────────────
         // Step 2: Generate response via Responses API
         // ─────────────────────────────────────────────────────────────
-        // GetProjectResponsesClientForAgent binds the agent + conversation
-        // so every call automatically maintains state.
+        // GetProjectResponsesClientForAgent binds the agent so every
+        // call automatically uses the correct agent definition.
+        // We pass the AgentReference (name + version) from AgentManager
+        // so the response is pinned to the exact version we deployed.
+        var agentManager = (AgentManager)_agentManager;
         var responseClient = _projectClient.OpenAI.GetProjectResponsesClientForAgent(
-            _agentManager.AgentName);
+            agentManager.GetAgentReference());
 
         _logger.LogInformation(
             "Creating response: Agent={Agent}, Conversation={ConversationId}, Input={InputLen} chars",
             _agentManager.AgentName, conversationId, request.Message.Length);
 
-        var responseOptions = new CreateResponseOptions
+        var responseOptions = new CreateResponseOptions(
+            [ResponseItem.CreateUserMessageItem(request.Message)])
         {
-            ConversationOptions = new ResponseConversationOptions(conversationId),
+            AgentConversationId = conversationId,
         };
-        responseOptions.InputItems.Add(ResponseItem.CreateUserMessageItem(request.Message));
 
         var response = await responseClient.CreateResponseAsync(
             responseOptions,
@@ -146,13 +149,11 @@ public class ConversationHandler : IConversationHandler
             }
 
             // Submit tool results and get the next response
-            var followUpOptions = new CreateResponseOptions
+            var followUpOptions = new CreateResponseOptions(toolOutputs)
             {
-                ConversationOptions = new ResponseConversationOptions(conversationId),
+                AgentConversationId = conversationId,
                 PreviousResponseId = currentResponse.Id,
             };
-            foreach (var output in toolOutputs)
-                followUpOptions.InputItems.Add(output);
 
             var nextResponse = await responseClient.CreateResponseAsync(
                 followUpOptions,

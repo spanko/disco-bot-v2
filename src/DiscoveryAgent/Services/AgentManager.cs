@@ -1,7 +1,5 @@
-using System.ClientModel;
-using System.ClientModel.Primitives;
 using Azure.AI.Projects;
-using Azure.AI.Projects.OpenAI;
+using Azure.AI.Extensions.OpenAI;
 using DiscoveryAgent.Configuration;
 using DiscoveryAgent.Core.Interfaces;
 using DiscoveryAgent.Core.Models;
@@ -25,8 +23,19 @@ public class AgentManager : IAgentManager
     private readonly DiscoveryBotSettings _settings;
     private readonly ILogger<AgentManager> _logger;
     private bool _initialized;
+    private string? _resolvedAgentName;
+    private string? _resolvedAgentVersion;
 
     public string AgentName => _settings.AgentName;
+
+    /// <summary>
+    /// Returns an AgentReference for the current agent version.
+    /// Used by ConversationHandler to bind responses to this agent.
+    /// </summary>
+    public AgentReference GetAgentReference() =>
+        _resolvedAgentName is not null && _resolvedAgentVersion is not null
+            ? new AgentReference(name: _resolvedAgentName, version: _resolvedAgentVersion)
+            : new AgentReference(name: _settings.AgentName);
 
     public AgentManager(
         AIProjectClient projectClient,
@@ -53,8 +62,8 @@ public class AgentManager : IAgentManager
         var instructions = await GetInstructionsAsync();
         var toolDefinitions = BuildToolDefinitions();
 
-        _logger.LogInformation("Creating/updating agent version: Name={Name}, Model={Model}, Instructions={Len} chars",
-            _settings.AgentName, _settings.ModelDeploymentName, instructions.Length);
+        _logger.LogInformation("Creating/updating agent version: Name={Name}, Model={Model}, Instructions={Len} chars, Tools={ToolCount}",
+            _settings.AgentName, _settings.ModelDeploymentName, instructions.Length, toolDefinitions.Count);
 
         try
         {
@@ -71,22 +80,21 @@ public class AgentManager : IAgentManager
                 definition.Tools.Add(tool);
             }
 
-            // CreateVersion creates a new version of the named agent.
-            // If the agent doesn't exist yet, it creates both the agent and version.
-            // The agent is then referenced by name in Responses API calls.
-            //
-            // NOTE: The beta SDK has a type mismatch between Azure.AI.Projects.OpenAI
-            // (PromptAgentDefinition) and Azure.AI.Projects.Agents (AgentVersionCreationOptions).
-            // We use the BinaryContent overload to bridge them.
-            var definitionJson = ModelReaderWriter.Write(definition, new ModelReaderWriterOptions("J"));
-            var bodyJson = BinaryData.FromObjectAsJson(new { definition = definitionJson });
+            // CreateAgentVersionAsync with the strongly-typed overload.
+            // Passing `new(definition)` creates an AgentVersionCreationOptions
+            // from the PromptAgentDefinition. This replaces the BinaryContent
+            // workaround that was silently failing in the beta SDK.
             var agentVersion = await _projectClient.Agents.CreateAgentVersionAsync(
                 agentName: _settings.AgentName,
-                content: BinaryContent.Create(bodyJson),
-                foundryFeatures: null,
-                options: new RequestOptions { CancellationToken = ct });
+                options: new(definition),
+                cancellationToken: ct);
 
-            _logger.LogInformation("Agent version created for: {Name}", _settings.AgentName);
+            _resolvedAgentName = agentVersion.Name;
+            _resolvedAgentVersion = agentVersion.Version;
+
+            _logger.LogInformation(
+                "Agent version created: Name={Name}, Version={Version}, Id={Id}",
+                agentVersion.Name, agentVersion.Version, agentVersion.Id);
 
             _initialized = true;
         }
