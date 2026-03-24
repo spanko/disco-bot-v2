@@ -35,7 +35,7 @@ public class AdminFunction
 
     [Function("ListContexts")]
     public async Task<IActionResult> ListContexts(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "admin/contexts")] HttpRequest req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "manage/contexts")] HttpRequest req)
     {
         var contexts = await _contextService.ListContextsAsync();
         return new OkObjectResult(contexts);
@@ -43,7 +43,7 @@ public class AdminFunction
 
     [Function("UpsertContext")]
     public async Task<IActionResult> UpsertContext(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "admin/context")] HttpRequest req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "manage/context")] HttpRequest req)
     {
         var context = await JsonSerializer.DeserializeAsync<DiscoveryContext>(req.Body, JsonOpts);
         if (context is null || string.IsNullOrEmpty(context.ContextId))
@@ -62,7 +62,7 @@ public class AdminFunction
 
     [Function("ListQuestionnaires")]
     public async Task<IActionResult> ListQuestionnaires(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "admin/questionnaires")] HttpRequest req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "manage/questionnaires")] HttpRequest req)
     {
         var container = _cosmosDb.GetContainer("questionnaires");
         var query = new QueryDefinition("SELECT * FROM c ORDER BY c.uploadedAt DESC");
@@ -74,7 +74,7 @@ public class AdminFunction
 
     [Function("UpsertQuestionnaire")]
     public async Task<IActionResult> UpsertQuestionnaire(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "admin/questionnaire")] HttpRequest req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "manage/questionnaire")] HttpRequest req)
     {
         var questionnaire = await JsonSerializer.DeserializeAsync<ParsedQuestionnaire>(req.Body, JsonOpts);
         if (questionnaire is null || string.IsNullOrEmpty(questionnaire.QuestionnaireId))

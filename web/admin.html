@@ -269,7 +269,7 @@ async function loadContexts() {
   const el = document.getElementById('ctxList');
   el.innerHTML = '<div class="status-msg">Loading...</div>';
   try {
-    const res = await fetch(`${API}/admin/contexts`);
+    const res = await fetch(`${API}/manage/contexts`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const contexts = await res.json();
     if (!contexts.length) { el.innerHTML = '<div class="status-msg">No contexts found.</div>'; return; }
@@ -314,7 +314,7 @@ function onContextFile(doc, fileName) {
 async function uploadContext() {
   if (!ctxPendingDoc) return;
   try {
-    const res = await fetch(`${API}/admin/context`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(ctxPendingDoc) });
+    const res = await fetch(`${API}/manage/context`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(ctxPendingDoc) });
     if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error||`HTTP ${res.status}`); }
     const data = await res.json();
     document.getElementById('ctxPreview').innerHTML = `<div class="status-msg" style="color:#2e7d32;">Uploaded: ${esc(data.contextId)}</div>`;
@@ -332,7 +332,7 @@ async function loadQuestionnaires() {
   const el = document.getElementById('qList');
   el.innerHTML = '<div class="status-msg">Loading...</div>';
   try {
-    const res = await fetch(`${API}/admin/questionnaires`);
+    const res = await fetch(`${API}/manage/questionnaires`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const items = await res.json();
     if (!items.length) { el.innerHTML = '<div class="status-msg">No questionnaires found.</div>'; return; }
@@ -360,7 +360,7 @@ function onQuestionnaireFile(doc, fileName) {
 async function uploadQuestionnaire() {
   if (!qPendingDoc) return;
   try {
-    const res = await fetch(`${API}/admin/questionnaire`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(qPendingDoc) });
+    const res = await fetch(`${API}/manage/questionnaire`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(qPendingDoc) });
     if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error||`HTTP ${res.status}`); }
     const data = await res.json();
     document.getElementById('qPreview').innerHTML = `<div class="status-msg" style="color:#2e7d32;">Uploaded: ${esc(data.questionnaireId)} (${data.sections} sections, ${data.questions} questions)</div>`;
