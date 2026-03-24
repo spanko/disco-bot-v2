@@ -90,23 +90,18 @@ public class ConversationHandler : IConversationHandler
         // ─────────────────────────────────────────────────────────────
         // Step 2: Generate response via Responses API
         // ─────────────────────────────────────────────────────────────
-        // GetProjectResponsesClientForAgent binds the agent so every
-        // call automatically uses the correct agent definition.
-        // We pass the AgentReference (name + version) from AgentManager
-        // so the response is pinned to the exact version we deployed.
-        var agentManager = (AgentManager)_agentManager;
         var responseClient = _projectClient.OpenAI.GetProjectResponsesClientForAgent(
-            agentManager.GetAgentReference());
+            _agentManager.AgentName);
 
         _logger.LogInformation(
             "Creating response: Agent={Agent}, Conversation={ConversationId}, Input={InputLen} chars",
             _agentManager.AgentName, conversationId, request.Message.Length);
 
+        // CreateResponseOptions constructor: (string conversationId, IEnumerable<ResponseItem> inputItems)
+        // This is the Azure.AI.Extensions.OpenAI 2.0.0-beta.1 signature.
         var responseOptions = new CreateResponseOptions(
-            [ResponseItem.CreateUserMessageItem(request.Message)])
-        {
-            AgentConversationId = conversationId,
-        };
+            conversationId,
+            [ResponseItem.CreateUserMessageItem(request.Message)]);
 
         var response = await responseClient.CreateResponseAsync(
             responseOptions,
@@ -148,10 +143,10 @@ public class ConversationHandler : IConversationHandler
                 }
             }
 
-            // Submit tool results and get the next response
-            var followUpOptions = new CreateResponseOptions(toolOutputs)
+            // Submit tool results — use the constructor with conversation ID + items,
+            // then set PreviousResponseId to chain the follow-up.
+            var followUpOptions = new CreateResponseOptions(conversationId, toolOutputs)
             {
-                AgentConversationId = conversationId,
                 PreviousResponseId = currentResponse.Id,
             };
 
