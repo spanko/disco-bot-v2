@@ -10,7 +10,7 @@ public class DiscoveryBotSettings
     // Foundry project
     public string ProjectEndpoint { get; set; } = "";
     public string AgentName { get; set; } = "discovery-agent";
-    public string ModelDeploymentName { get; set; } = "gpt-4.1";
+    public string ModelDeploymentName { get; set; } = "gpt-4o";
 
     // BYO Cosmos DB
     public string CosmosEndpoint { get; set; } = "";
@@ -36,7 +36,7 @@ public class DiscoveryBotSettings
     {
         ProjectEndpoint = Env("PROJECT_ENDPOINT"),
         AgentName = Env("AGENT_NAME", "discovery-agent"),
-        ModelDeploymentName = Env("MODEL_DEPLOYMENT_NAME", "gpt-4.1"),
+        ModelDeploymentName = Env("MODEL_DEPLOYMENT_NAME", "gpt-4o"),
         CosmosEndpoint = Env("COSMOS_ENDPOINT"),
         CosmosDatabase = Env("COSMOS_DATABASE", "discovery"),
         StorageEndpoint = Env("STORAGE_ENDPOINT"),
