@@ -37,12 +37,22 @@
   @keyframes bounce { 0%,80%,100% { transform: translateY(0); } 40% { transform: translateY(-6px); } }
 
   .input-area { background: #fff; border-top: 1px solid #e0e0e0; padding: 16px 24px; }
-  .input-wrapper { max-width: 720px; margin: 0 auto; display: flex; gap: 12px; }
+  .input-wrapper { max-width: 720px; margin: 0 auto; display: flex; gap: 12px; align-items: flex-end; }
   .input-wrapper textarea { flex: 1; border: 1px solid #d0d0d0; border-radius: 8px; padding: 10px 14px; font-size: 14px; font-family: inherit; resize: none; min-height: 44px; max-height: 120px; line-height: 1.4; }
   .input-wrapper textarea:focus { outline: none; border-color: #4a90d9; box-shadow: 0 0 0 2px rgba(74,144,217,0.2); }
   .input-wrapper button { background: #1a1a2e; color: #fff; border: none; border-radius: 8px; padding: 10px 20px; font-size: 14px; cursor: pointer; white-space: nowrap; }
   .input-wrapper button:hover { background: #2a2a4e; }
   .input-wrapper button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .attach-btn { background: none; border: 1px solid #d0d0d0; border-radius: 8px; padding: 10px 12px; cursor: pointer; color: #666; font-size: 16px; line-height: 1; }
+  .attach-btn:hover { border-color: #4a90d9; color: #4a90d9; }
+
+  .attachments { max-width: 720px; margin: 0 auto; display: flex; gap: 8px; flex-wrap: wrap; padding-top: 8px; }
+  .attachment { display: flex; align-items: center; gap: 6px; background: #e8f4fd; border: 1px solid #b3d9f2; border-radius: 6px; padding: 4px 10px; font-size: 12px; color: #1565c0; }
+  .attachment .remove { cursor: pointer; color: #c62828; font-weight: bold; margin-left: 4px; }
+  .attachment .remove:hover { color: #f44336; }
+  .attachment .uploading { color: #888; font-style: italic; }
+  .attachment img { width: 24px; height: 24px; object-fit: cover; border-radius: 3px; }
 
   .config-bar { max-width: 720px; margin: 0 auto; display: flex; gap: 12px; padding-top: 8px; font-size: 12px; color: #8b8ba7; align-items: center; }
   .config-bar label { display: flex; align-items: center; gap: 4px; }
@@ -70,11 +80,15 @@
 
 <div class="input-area">
   <div class="input-wrapper">
+    <button class="attach-btn" onclick="fileInput.click()" title="Attach file (PDF, Word, Image)">&#128206;</button>
+    <input type="file" id="fileInput" multiple accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.gif,.webp,.bmp,.tiff" style="display:none">
     <textarea id="input" placeholder="Type your message..." rows="1"></textarea>
     <button id="send" onclick="sendMessage()">Send</button>
   </div>
+  <div class="attachments" id="attachments"></div>
   <div class="config-bar">
     <label>User ID: <input id="userId" value="web-user-1"></label>
+    <label>Context: <input id="contextId" value="" placeholder="optional"></label>
     <div class="conv-id" id="convDisplay"></div>
   </div>
 </div>
@@ -82,13 +96,16 @@
 <script>
 const API_BASE = 'https://discdev-func-3xr5ve.azurewebsites.net';
 let conversationId = null;
+let pendingDocuments = []; // {id, fileName, status}
 
 const chat = document.getElementById('chat');
 const input = document.getElementById('input');
 const typing = document.getElementById('typing');
 const sendBtn = document.getElementById('send');
-const status = document.getElementById('status');
+const statusEl = document.getElementById('status');
 const convDisplay = document.getElementById('convDisplay');
+const fileInput = document.getElementById('fileInput');
+const attachmentsEl = document.getElementById('attachments');
 
 // Auto-resize textarea
 input.addEventListener('input', () => {
@@ -104,6 +121,90 @@ input.addEventListener('keydown', (e) => {
   }
 });
 
+// File input handler
+fileInput.addEventListener('change', () => {
+  for (const file of fileInput.files) {
+    uploadFile(file);
+  }
+  fileInput.value = '';
+});
+
+// Drag and drop on input area
+const inputArea = document.querySelector('.input-area');
+inputArea.addEventListener('dragover', (e) => { e.preventDefault(); inputArea.style.borderColor = '#4a90d9'; });
+inputArea.addEventListener('dragleave', () => { inputArea.style.borderColor = ''; });
+inputArea.addEventListener('drop', (e) => {
+  e.preventDefault();
+  inputArea.style.borderColor = '';
+  for (const file of e.dataTransfer.files) {
+    uploadFile(file);
+  }
+});
+
+async function uploadFile(file) {
+  const maxSize = 20 * 1024 * 1024;
+  if (file.size > maxSize) { alert(`File too large: ${file.name} (max 20 MB)`); return; }
+
+  const userId = document.getElementById('userId').value || 'web-user-1';
+  const contextId = document.getElementById('contextId').value || 'default';
+
+  const entry = { id: null, fileName: file.name, status: 'uploading', isImage: file.type.startsWith('image/'), thumbUrl: null };
+  pendingDocuments.push(entry);
+
+  // Create thumbnail for images
+  if (entry.isImage) {
+    entry.thumbUrl = URL.createObjectURL(file);
+  }
+
+  renderAttachments();
+
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('userId', userId);
+  formData.append('contextId', contextId);
+
+  try {
+    const res = await fetch(`${API_BASE}/api/documents/upload`, { method: 'POST', body: formData });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    entry.id = data.documentId;
+    entry.status = 'ready';
+  } catch (err) {
+    entry.status = 'error';
+    entry.error = err.message;
+  }
+  renderAttachments();
+}
+
+function removeAttachment(index) {
+  if (pendingDocuments[index]?.thumbUrl) URL.revokeObjectURL(pendingDocuments[index].thumbUrl);
+  pendingDocuments.splice(index, 1);
+  renderAttachments();
+}
+
+function renderAttachments() {
+  attachmentsEl.innerHTML = pendingDocuments.map((doc, i) => {
+    const icon = doc.isImage && doc.thumbUrl ? `<img src="${doc.thumbUrl}">` : '&#128196;';
+    if (doc.status === 'uploading') {
+      return `<div class="attachment">${icon} <span class="uploading">${esc(doc.fileName)} uploading...</span></div>`;
+    }
+    if (doc.status === 'error') {
+      return `<div class="attachment" style="border-color:#f44336;background:#fce4ec;color:#c62828;">${icon} ${esc(doc.fileName)} (failed) <span class="remove" onclick="removeAttachment(${i})">x</span></div>`;
+    }
+    return `<div class="attachment">${icon} ${esc(doc.fileName)} <span class="remove" onclick="removeAttachment(${i})">x</span></div>`;
+  }).join('');
+}
+
+function esc(s) {
+  if (s == null) return '';
+  const d = document.createElement('div');
+  d.textContent = String(s);
+  return d.innerHTML;
+}
+
 function addMessage(role, text, extras) {
   const div = document.createElement('div');
   div.className = `message ${role}`;
@@ -117,6 +218,13 @@ function addMessage(role, text, extras) {
   bubble.className = 'content';
   bubble.textContent = text;
   content.appendChild(bubble);
+
+  if (extras?.files?.length) {
+    const fi = document.createElement('div');
+    fi.className = 'knowledge-ids';
+    fi.textContent = `Attached: ${extras.files.join(', ')}`;
+    content.appendChild(fi);
+  }
 
   if (extras?.knowledgeIds?.length) {
     const ki = document.createElement('div');
@@ -141,27 +249,51 @@ function addMessage(role, text, extras) {
 
 async function sendMessage() {
   const text = input.value.trim();
-  if (!text) return;
+  if (!text && pendingDocuments.length === 0) return;
+
+  // Wait for any uploading files
+  const uploading = pendingDocuments.filter(d => d.status === 'uploading');
+  if (uploading.length > 0) {
+    statusEl.textContent = 'Waiting for uploads to finish...';
+    await new Promise(resolve => {
+      const check = setInterval(() => {
+        if (!pendingDocuments.some(d => d.status === 'uploading')) { clearInterval(check); resolve(); }
+      }, 200);
+    });
+  }
 
   const userId = document.getElementById('userId').value || 'web-user-1';
+  const contextId = document.getElementById('contextId').value || '';
+
+  // Gather ready document IDs
+  const docIds = pendingDocuments.filter(d => d.status === 'ready' && d.id).map(d => d.id);
+  const fileNames = pendingDocuments.filter(d => d.status === 'ready').map(d => d.fileName);
+
+  const messageText = text || `I've uploaded ${fileNames.length} document(s): ${fileNames.join(', ')}. Please review.`;
 
   input.value = '';
   input.style.height = 'auto';
   sendBtn.disabled = true;
-  addMessage('user', text);
+  addMessage('user', messageText, { files: fileNames.length > 0 ? fileNames : null });
+
+  // Clear attachments
+  pendingDocuments.forEach(d => { if (d.thumbUrl) URL.revokeObjectURL(d.thumbUrl); });
+  pendingDocuments = [];
+  renderAttachments();
 
   typing.classList.add('active');
-  status.textContent = 'Thinking...';
+  statusEl.textContent = 'Thinking...';
   chat.scrollTop = chat.scrollHeight;
 
-  const body = { userId, message: text };
+  const body = { userId, message: messageText };
   if (conversationId) body.conversationId = conversationId;
+  if (contextId) body.contextId = contextId;
+  if (docIds.length > 0) body.documentIds = docIds;
 
   const start = performance.now();
 
   try {
-    const url = `${API_BASE}/api/conversation`;
-    const res = await fetch(url, {
+    const res = await fetch(`${API_BASE}/api/conversation`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -177,7 +309,7 @@ async function sendMessage() {
     const data = await res.json();
     conversationId = data.conversationId;
     convDisplay.textContent = `conv: ${conversationId.slice(0, 20)}...`;
-    status.textContent = `Connected - ${data.agentName}`;
+    statusEl.textContent = `Connected - ${data.agentName}`;
 
     addMessage('agent', data.response, {
       knowledgeIds: data.extractedKnowledgeIds,
@@ -185,7 +317,7 @@ async function sendMessage() {
     });
   } catch (err) {
     addMessage('agent', `Error: ${err.message}`, {});
-    status.textContent = 'Error';
+    statusEl.textContent = 'Error';
   } finally {
     typing.classList.remove('active');
     sendBtn.disabled = false;
@@ -193,12 +325,14 @@ async function sendMessage() {
   }
 }
 
-// New conversation
 function newConversation() {
   conversationId = null;
   chat.innerHTML = '';
   convDisplay.textContent = '';
-  status.textContent = 'Ready';
+  statusEl.textContent = 'Ready';
+  pendingDocuments.forEach(d => { if (d.thumbUrl) URL.revokeObjectURL(d.thumbUrl); });
+  pendingDocuments = [];
+  renderAttachments();
 }
 </script>
 

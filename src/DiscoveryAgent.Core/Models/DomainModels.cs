@@ -173,7 +173,8 @@ public record ConversationRequest(
     string UserId,
     string Message,
     string? ConversationId = null,
-    string? ContextId = null
+    string? ContextId = null,
+    List<string>? DocumentIds = null
 );
 
 public record ConversationResponse(

@@ -1,5 +1,6 @@
 using Azure.AI.Extensions.OpenAI;
 using Azure.AI.Projects;
+using Azure.Storage.Blobs;
 using DiscoveryAgent.Configuration;
 using DiscoveryAgent.Core.Interfaces;
 using DiscoveryAgent.Core.Models;
@@ -28,6 +29,7 @@ public class ConversationHandler : IConversationHandler
     private readonly IKnowledgeStore _knowledgeStore;
     private readonly IUserProfileService _userProfiles;
     private readonly IContextManagementService _contextService;
+    private readonly BlobServiceClient _blobService;
     private readonly DiscoveryBotSettings _settings;
     private readonly ILogger<ConversationHandler> _logger;
 
@@ -37,6 +39,7 @@ public class ConversationHandler : IConversationHandler
         IKnowledgeStore knowledgeStore,
         IUserProfileService userProfiles,
         IContextManagementService contextService,
+        BlobServiceClient blobService,
         DiscoveryBotSettings settings,
         ILogger<ConversationHandler> logger)
     {
@@ -45,6 +48,7 @@ public class ConversationHandler : IConversationHandler
         _knowledgeStore = knowledgeStore;
         _userProfiles = userProfiles;
         _contextService = contextService;
+        _blobService = blobService;
         _settings = settings;
         _logger = logger;
     }
@@ -99,12 +103,23 @@ public class ConversationHandler : IConversationHandler
             defaultAgent: _agentManager.AgentName,
             defaultConversationId: conversationId);
 
+        // ─────────────────────────────────────────────────────────────
+        // Step 2a: Build input message (with optional document content)
+        // ─────────────────────────────────────────────────────────────
+        var userMessage = request.Message;
+        if (request.DocumentIds is { Count: > 0 })
+        {
+            var docContext = await BuildDocumentContext(request.DocumentIds, ct);
+            if (!string.IsNullOrEmpty(docContext))
+                userMessage = $"{request.Message}\n\n[ATTACHED DOCUMENTS]\n{docContext}";
+        }
+
         _logger.LogInformation(
             "Creating response: Agent={Agent}, Conversation={ConversationId}, Input={InputLen} chars",
-            _agentManager.AgentName, conversationId, request.Message.Length);
+            _agentManager.AgentName, conversationId, userMessage.Length);
 
         var responseOptions = new CreateResponseOptions();
-        responseOptions.InputItems.Add(ResponseItem.CreateUserMessageItem(request.Message));
+        responseOptions.InputItems.Add(ResponseItem.CreateUserMessageItem(userMessage));
 
         var response = await responseClient.CreateResponseAsync(
             responseOptions, ct);
@@ -275,6 +290,86 @@ public class ConversationHandler : IConversationHandler
 
     private static ToolCallResult HandleSectionComplete(string arguments) =>
         new(JsonSerializer.Serialize(new { status = "section_completed" }), null);
+
+    // ─── Document handling ──────────────────────────────────────────
+
+    private async Task<string> BuildDocumentContext(List<string> documentIds, CancellationToken ct)
+    {
+        var container = _blobService.GetBlobContainerClient("documents");
+        var parts = new List<string>();
+
+        foreach (var docId in documentIds)
+        {
+            try
+            {
+                // Find the blob by scanning for the document ID in the name
+                await foreach (var blob in container.GetBlobsAsync(
+                    new Azure.Storage.Blobs.Models.GetBlobsOptions { Traits = Azure.Storage.Blobs.Models.BlobTraits.Metadata }, ct))
+                {
+                    if (!blob.Name.Contains(docId)) continue;
+
+                    var blobClient = container.GetBlobClient(blob.Name);
+                    var contentType = blob.Properties.ContentType ?? "";
+                    var originalName = blob.Metadata is not null && blob.Metadata.TryGetValue("originalName", out var name) ? name : blob.Name;
+
+                    if (contentType.StartsWith("image/"))
+                    {
+                        // For images: download and encode as base64 for GPT-4o vision
+                        using var ms = new MemoryStream();
+                        await blobClient.DownloadToAsync(ms, ct);
+                        var base64 = Convert.ToBase64String(ms.ToArray());
+                        parts.Add($"--- Image: {originalName} ---\n[Image uploaded as {contentType}, {ms.Length} bytes. Base64 data available for analysis.]\ndata:{contentType};base64,{base64}");
+                    }
+                    else
+                    {
+                        // For documents: download text content
+                        // Simple text extraction — for PDFs and Word docs,
+                        // the content is stored as-is in blob; Document Intelligence
+                        // can be added later for richer extraction
+                        using var ms = new MemoryStream();
+                        await blobClient.DownloadToAsync(ms, ct);
+                        ms.Position = 0;
+
+                        var text = await ExtractTextFromDocument(ms, contentType, originalName);
+                        if (!string.IsNullOrEmpty(text))
+                            parts.Add($"--- Document: {originalName} ---\n{text}");
+                        else
+                            parts.Add($"--- Document: {originalName} ---\n[Document uploaded ({contentType}, {ms.Length} bytes) but text extraction not available. Please acknowledge receipt.]");
+                    }
+
+                    break; // Found the blob, move to next docId
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to load document {DocumentId}", docId);
+                parts.Add($"[Failed to load document {docId}]");
+            }
+        }
+
+        return string.Join("\n\n", parts);
+    }
+
+    private static async Task<string?> ExtractTextFromDocument(
+        MemoryStream stream, string contentType, string fileName)
+    {
+        // Plain text files
+        if (contentType.Contains("text/"))
+        {
+            using var reader = new StreamReader(stream);
+            return await reader.ReadToEndAsync();
+        }
+
+        // For PDF and Word docs, return a placeholder indicating content is available
+        // Full Document Intelligence integration can be added as an enhancement
+        var ext = Path.GetExtension(fileName)?.ToLowerInvariant();
+        if (ext is ".pdf" or ".docx" or ".doc")
+        {
+            return $"[{Path.GetExtension(fileName).ToUpperInvariant().TrimStart('.')} document, {stream.Length:N0} bytes. Content extraction pending Document Intelligence integration.]";
+        }
+
+        return null;
+    }
 
     // ─── Deserialization helpers ─────────────────────────────────────
 
