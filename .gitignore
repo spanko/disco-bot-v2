@@ -21,3 +21,6 @@ Thumbs.db
 
 ## Build artifacts
 ctemp*
+*.patch
+publish.zip
+publish-profile.xml
