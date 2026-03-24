@@ -17,7 +17,7 @@ public class KnowledgeQueryFunction
 
     [Function("GetKnowledge")]
     public async Task<IActionResult> GetByContext(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "knowledge/{contextId}")] HttpRequest req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "knowledge/{contextId}")] HttpRequest req,
         string contextId)
     {
         var skip = int.TryParse(req.Query["skip"], out var s) ? s : 0;
@@ -28,7 +28,7 @@ public class KnowledgeQueryFunction
 
     [Function("SearchKnowledge")]
     public async Task<IActionResult> Search(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "knowledge/{contextId}/search")] HttpRequest req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "knowledge/{contextId}/search")] HttpRequest req,
         string contextId)
     {
         var query = req.Query["q"].ToString();
@@ -39,7 +39,7 @@ public class KnowledgeQueryFunction
 
     [Function("KnowledgeSummary")]
     public async Task<IActionResult> Summary(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "knowledge/{contextId}/summary")] HttpRequest req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "knowledge/{contextId}/summary")] HttpRequest req,
         string contextId)
     {
         var summary = await _queryService.GetCategorySummaryAsync(contextId);
@@ -48,7 +48,7 @@ public class KnowledgeQueryFunction
 
     [Function("KnowledgeProvenance")]
     public async Task<IActionResult> Provenance(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "knowledge/{contextId}/provenance/{itemId}")] HttpRequest req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "knowledge/{contextId}/provenance/{itemId}")] HttpRequest req,
         string contextId, string itemId)
     {
         var provenance = await _store.TraceOriginAsync(itemId, contextId);

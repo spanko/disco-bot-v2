@@ -7,6 +7,7 @@ on:
 
 env:
   AZURE_FUNCTIONAPP_NAME: discdev-func-3xr5ve
+  AZURE_STORAGE_ACCOUNT: discdevstor3xr5ve
   DOTNET_VERSION: '9.0.x'
   PROJECT_PATH: src/DiscoveryAgent
 
@@ -30,3 +31,24 @@ jobs:
           app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
           package: ./output
           publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+
+  deploy-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Upload to static website
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            az storage blob upload-batch \
+              --account-name ${{ env.AZURE_STORAGE_ACCOUNT }} \
+              --destination '$web' \
+              --source web/ \
+              --overwrite \
+              --auth-mode login

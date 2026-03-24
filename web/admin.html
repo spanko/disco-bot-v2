@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Discovery Bot - Knowledge Admin</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; min-height: 100vh; }
+
+  header { background: #1a1a2e; color: #fff; padding: 16px 24px; display: flex; align-items: center; gap: 16px; }
+  header h1 { font-size: 18px; font-weight: 600; }
+  header .nav { display: flex; gap: 8px; margin-left: auto; }
+  header a { color: rgba(255,255,255,0.7); text-decoration: none; font-size: 13px; padding: 6px 14px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.2); }
+  header a:hover, header a.active { color: #fff; background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.4); }
+
+  .toolbar { max-width: 960px; margin: 20px auto 0; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; padding: 0 16px; }
+  .toolbar label { font-size: 13px; color: #555; display: flex; align-items: center; gap: 4px; }
+  .toolbar input, .toolbar select { border: 1px solid #d0d0d0; border-radius: 6px; padding: 6px 10px; font-size: 13px; }
+  .toolbar input[type="text"] { width: 140px; }
+  .toolbar input[type="password"] { width: 180px; }
+  .toolbar button { background: #1a1a2e; color: #fff; border: none; border-radius: 6px; padding: 7px 16px; font-size: 13px; cursor: pointer; }
+  .toolbar button:hover { background: #2a2a4e; }
+  .toolbar .spacer { flex: 1; }
+
+  .summary-bar { max-width: 960px; margin: 16px auto; display: flex; gap: 10px; padding: 0 16px; flex-wrap: wrap; }
+  .summary-chip { background: #fff; border: 1px solid #e0e0e0; border-radius: 20px; padding: 6px 14px; font-size: 13px; color: #333; cursor: pointer; transition: all 0.15s; }
+  .summary-chip:hover { border-color: #4a90d9; }
+  .summary-chip.active { background: #4a90d9; color: #fff; border-color: #4a90d9; }
+  .summary-chip .count { font-weight: 700; margin-left: 4px; }
+
+  .search-bar { max-width: 960px; margin: 12px auto; padding: 0 16px; display: flex; gap: 8px; }
+  .search-bar input { flex: 1; border: 1px solid #d0d0d0; border-radius: 6px; padding: 8px 12px; font-size: 14px; }
+  .search-bar input:focus { outline: none; border-color: #4a90d9; box-shadow: 0 0 0 2px rgba(74,144,217,0.2); }
+  .search-bar button { background: #4a90d9; color: #fff; border: none; border-radius: 6px; padding: 8px 18px; font-size: 14px; cursor: pointer; }
+  .search-bar button:hover { background: #3a7fc0; }
+
+  .content { max-width: 960px; margin: 16px auto; padding: 0 16px; }
+
+  .status-msg { text-align: center; padding: 40px; color: #888; font-size: 14px; }
+
+  .item-card { background: #fff; border: 1px solid #e0e0e0; border-radius: 10px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+  .item-card .top-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .item-card .category { font-size: 11px; font-weight: 700; text-transform: uppercase; padding: 3px 8px; border-radius: 4px; }
+  .cat-fact { background: #e8f4fd; color: #1565c0; }
+  .cat-opinion { background: #fff3e0; color: #e65100; }
+  .cat-decision { background: #e8f5e9; color: #2e7d32; }
+  .cat-requirement { background: #f3e5f5; color: #6a1b9a; }
+  .cat-concern { background: #fce4ec; color: #c62828; }
+  .item-card .confidence { font-size: 11px; color: #888; margin-left: auto; }
+  .item-card .item-content { font-size: 14px; line-height: 1.6; color: #222; margin-bottom: 10px; }
+  .item-card .meta-row { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: #888; }
+  .item-card .meta-row span { display: flex; align-items: center; gap: 4px; }
+  .item-card .tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
+  .item-card .tag { background: #f0f0f0; border-radius: 4px; padding: 2px 8px; font-size: 11px; color: #555; }
+  .item-card .id-label { font-size: 10px; color: #aaa; font-family: monospace; cursor: pointer; }
+  .item-card .id-label:hover { color: #4a90d9; }
+
+  .pagination { display: flex; justify-content: center; gap: 8px; padding: 16px 0 32px; }
+  .pagination button { background: #fff; border: 1px solid #d0d0d0; border-radius: 6px; padding: 6px 14px; font-size: 13px; cursor: pointer; }
+  .pagination button:hover { border-color: #4a90d9; }
+  .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .pagination .page-info { line-height: 32px; font-size: 13px; color: #666; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Knowledge Admin</h1>
+  </div>
+  <div class="nav">
+    <a href="index.html">Chat</a>
+    <a href="admin.html" class="active">Admin</a>
+  </div>
+</header>
+
+<div class="toolbar">
+  <label>Context: <input type="text" id="contextId" value="default"></label>
+  <button onclick="loadData()">Load</button>
+  <div class="spacer"></div>
+  <span id="totalCount" style="font-size:13px;color:#666;"></span>
+</div>
+
+<div class="summary-bar" id="summaryBar"></div>
+
+<div class="search-bar">
+  <input type="text" id="searchInput" placeholder="Semantic search across knowledge items...">
+  <button onclick="semanticSearch()">Search</button>
+</div>
+
+<div class="content" id="content">
+  <div class="status-msg">Enter a context ID and API key, then click Load.</div>
+</div>
+
+<div class="pagination" id="pagination" style="display:none;">
+  <button id="prevBtn" onclick="prevPage()">Previous</button>
+  <span class="page-info" id="pageInfo"></span>
+  <button id="nextBtn" onclick="nextPage()">Next</button>
+</div>
+
+<script>
+const API_BASE = 'https://discdev-func-3xr5ve.azurewebsites.net';
+const PAGE_SIZE = 20;
+let currentPage = 0;
+let allItems = [];
+let filteredItems = [];
+let activeCategory = null;
+let summaryData = {};
+let isSearchMode = false;
+
+function apiUrl(path) {
+  return `${API_BASE}${path}`;
+}
+
+function contextId() {
+  return document.getElementById('contextId').value || 'default';
+}
+
+async function loadData() {
+  const ctx = contextId();
+  document.getElementById('content').innerHTML = '<div class="status-msg">Loading...</div>';
+  document.getElementById('summaryBar').innerHTML = '';
+  document.getElementById('pagination').style.display = 'none';
+  isSearchMode = false;
+  activeCategory = null;
+
+  try {
+    // Load items and summary in parallel
+    const [itemsRes, summaryRes] = await Promise.all([
+      fetch(apiUrl(`/api/knowledge/${ctx}?take=500`)),
+      fetch(apiUrl(`/api/knowledge/${ctx}/summary`))
+    ]);
+
+    if (!itemsRes.ok) throw new Error(`Items: HTTP ${itemsRes.status}`);
+
+    allItems = await itemsRes.json();
+    filteredItems = allItems;
+
+    if (summaryRes.ok) {
+      summaryData = await summaryRes.json();
+      renderSummary();
+    }
+
+    document.getElementById('totalCount').textContent = `${allItems.length} items`;
+    currentPage = 0;
+    renderItems();
+  } catch (err) {
+    document.getElementById('content').innerHTML =
+      `<div class="status-msg">Error: ${err.message}</div>`;
+  }
+}
+
+async function semanticSearch() {
+  const q = document.getElementById('searchInput').value.trim();
+  if (!q) { resetToAll(); return; }
+
+  document.getElementById('content').innerHTML = '<div class="status-msg">Searching...</div>';
+  isSearchMode = true;
+  activeCategory = null;
+  renderSummary();
+
+  try {
+    const res = await fetch(apiUrl(`/api/knowledge/${contextId()}/search?q=${encodeURIComponent(q)}`));
+    if (!res.ok) throw new Error(`Search: HTTP ${res.status}`);
+    filteredItems = await res.json();
+    currentPage = 0;
+    document.getElementById('totalCount').textContent = `${filteredItems.length} results`;
+    renderItems();
+  } catch (err) {
+    document.getElementById('content').innerHTML =
+      `<div class="status-msg">Error: ${err.message}</div>`;
+  }
+}
+
+function resetToAll() {
+  isSearchMode = false;
+  activeCategory = null;
+  filteredItems = allItems;
+  currentPage = 0;
+  document.getElementById('totalCount').textContent = `${allItems.length} items`;
+  renderSummary();
+  renderItems();
+}
+
+function filterByCategory(cat) {
+  isSearchMode = false;
+  document.getElementById('searchInput').value = '';
+
+  if (activeCategory === cat) {
+    activeCategory = null;
+    filteredItems = allItems;
+  } else {
+    activeCategory = cat;
+    filteredItems = allItems.filter(i =>
+      (i.category ?? '').toString().toLowerCase() === cat.toLowerCase());
+  }
+  currentPage = 0;
+  document.getElementById('totalCount').textContent = `${filteredItems.length} items`;
+  renderSummary();
+  renderItems();
+}
+
+function renderSummary() {
+  const bar = document.getElementById('summaryBar');
+  const cats = ['Fact', 'Opinion', 'Decision', 'Requirement', 'Concern'];
+  bar.innerHTML = cats.map(cat => {
+    // summaryData keys could be numeric enum values or strings
+    const count = summaryData[cat] ?? summaryData[cat.toLowerCase()] ?? countLocal(cat);
+    const isActive = activeCategory === cat ? ' active' : '';
+    return `<div class="summary-chip${isActive}" onclick="filterByCategory('${cat}')">${cat}<span class="count">${count}</span></div>`;
+  }).join('');
+}
+
+function countLocal(cat) {
+  return allItems.filter(i =>
+    (i.category ?? '').toString().toLowerCase() === cat.toLowerCase() ||
+    (i.category ?? '').toString() === categoryEnumValue(cat)
+  ).length;
+}
+
+function categoryEnumValue(cat) {
+  const map = { Fact: '0', Opinion: '1', Decision: '2', Requirement: '3', Concern: '4' };
+  return map[cat] ?? '';
+}
+
+function categoryName(val) {
+  if (typeof val === 'string' && isNaN(val)) return val;
+  const names = ['Fact', 'Opinion', 'Decision', 'Requirement', 'Concern'];
+  return names[parseInt(val)] ?? val;
+}
+
+function categoryClass(val) {
+  return 'cat-' + categoryName(val).toLowerCase();
+}
+
+function renderItems() {
+  const start = currentPage * PAGE_SIZE;
+  const page = filteredItems.slice(start, start + PAGE_SIZE);
+  const container = document.getElementById('content');
+
+  if (page.length === 0) {
+    container.innerHTML = '<div class="status-msg">No knowledge items found.</div>';
+    document.getElementById('pagination').style.display = 'none';
+    return;
+  }
+
+  container.innerHTML = page.map(item => {
+    const cat = categoryName(item.category);
+    const conf = (item.confidence * 100).toFixed(0);
+    const date = item.extractionTimestamp ? new Date(item.extractionTimestamp).toLocaleString() : '';
+    const tags = (item.tags ?? []).map(t => `<span class="tag">${esc(t)}</span>`).join('');
+
+    return `<div class="item-card">
+      <div class="top-row">
+        <span class="category ${categoryClass(item.category)}">${esc(cat)}</span>
+        <span class="confidence">${conf}% confidence</span>
+      </div>
+      <div class="item-content">${esc(item.content)}</div>
+      <div class="meta-row">
+        <span>User: ${esc(item.sourceUserId)}</span>
+        <span>Context: ${esc(item.relatedContextId)}</span>
+        ${date ? `<span>${date}</span>` : ''}
+      </div>
+      ${tags ? `<div class="tags">${tags}</div>` : ''}
+      <div class="id-label" title="Click to copy" onclick="navigator.clipboard.writeText('${esc(item.id)}')">${esc(item.id)}</div>
+    </div>`;
+  }).join('');
+
+  // Pagination
+  const totalPages = Math.ceil(filteredItems.length / PAGE_SIZE);
+  const pag = document.getElementById('pagination');
+  if (totalPages > 1) {
+    pag.style.display = 'flex';
+    document.getElementById('prevBtn').disabled = currentPage === 0;
+    document.getElementById('nextBtn').disabled = currentPage >= totalPages - 1;
+    document.getElementById('pageInfo').textContent = `Page ${currentPage + 1} of ${totalPages}`;
+  } else {
+    pag.style.display = 'none';
+  }
+}
+
+function prevPage() { if (currentPage > 0) { currentPage--; renderItems(); window.scrollTo(0, 0); } }
+function nextPage() { currentPage++; renderItems(); window.scrollTo(0, 0); }
+
+function esc(s) {
+  if (s == null) return '';
+  const d = document.createElement('div');
+  d.textContent = String(s);
+  return d.innerHTML;
+}
+
+// Enter key in search
+document.getElementById('searchInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') semanticSearch();
+});
+// Enter key in context field triggers load
+document.getElementById('contextId').addEventListener('keydown', e => {
+  if (e.key === 'Enter') loadData();
+});
+</script>
+
+</body>
+</html>
