@@ -75,7 +75,6 @@
   </div>
   <div class="config-bar">
     <label>User ID: <input id="userId" value="web-user-1"></label>
-    <label>API Key: <input id="apiKey" type="password" value=""></label>
     <div class="conv-id" id="convDisplay"></div>
   </div>
 </div>
@@ -145,7 +144,6 @@ async function sendMessage() {
   if (!text) return;
 
   const userId = document.getElementById('userId').value || 'web-user-1';
-  const apiKey = document.getElementById('apiKey').value;
 
   input.value = '';
   input.style.height = 'auto';
@@ -162,7 +160,7 @@ async function sendMessage() {
   const start = performance.now();
 
   try {
-    const url = `${API_BASE}/api/conversation${apiKey ? '?code=' + apiKey : ''}`;
+    const url = `${API_BASE}/api/conversation`;
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

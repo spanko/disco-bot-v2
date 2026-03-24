@@ -21,7 +21,7 @@ public class ConversationFunction
 
     [Function("Conversation")]
     public async Task<IActionResult> Run(
-        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "conversation")] HttpRequest req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "conversation")] HttpRequest req)
     {
         try
         {
