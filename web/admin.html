@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Discovery Bot - Knowledge Admin</title>
+<title>Discovery Bot - Admin</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; min-height: 100vh; }
@@ -14,274 +14,153 @@
   header a { color: rgba(255,255,255,0.7); text-decoration: none; font-size: 13px; padding: 6px 14px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.2); }
   header a:hover, header a.active { color: #fff; background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.4); }
 
-  .toolbar { max-width: 960px; margin: 20px auto 0; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; padding: 0 16px; }
+  /* Tabs */
+  .tabs { max-width: 960px; margin: 16px auto 0; padding: 0 16px; display: flex; gap: 4px; border-bottom: 2px solid #e0e0e0; }
+  .tab { padding: 10px 20px; font-size: 14px; cursor: pointer; border: none; background: none; color: #666; border-bottom: 2px solid transparent; margin-bottom: -2px; }
+  .tab:hover { color: #333; }
+  .tab.active { color: #1a1a2e; border-bottom-color: #4a90d9; font-weight: 600; }
+
+  .panel { display: none; max-width: 960px; margin: 0 auto; padding: 16px; }
+  .panel.active { display: block; }
+
+  /* Shared */
+  .toolbar { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
   .toolbar label { font-size: 13px; color: #555; display: flex; align-items: center; gap: 4px; }
   .toolbar input, .toolbar select { border: 1px solid #d0d0d0; border-radius: 6px; padding: 6px 10px; font-size: 13px; }
-  .toolbar input[type="text"] { width: 140px; }
-  .toolbar input[type="password"] { width: 180px; }
-  .toolbar button { background: #1a1a2e; color: #fff; border: none; border-radius: 6px; padding: 7px 16px; font-size: 13px; cursor: pointer; }
-  .toolbar button:hover { background: #2a2a4e; }
   .toolbar .spacer { flex: 1; }
-
-  .summary-bar { max-width: 960px; margin: 16px auto; display: flex; gap: 10px; padding: 0 16px; flex-wrap: wrap; }
-  .summary-chip { background: #fff; border: 1px solid #e0e0e0; border-radius: 20px; padding: 6px 14px; font-size: 13px; color: #333; cursor: pointer; transition: all 0.15s; }
-  .summary-chip:hover { border-color: #4a90d9; }
-  .summary-chip.active { background: #4a90d9; color: #fff; border-color: #4a90d9; }
-  .summary-chip .count { font-weight: 700; margin-left: 4px; }
-
-  .search-bar { max-width: 960px; margin: 12px auto; padding: 0 16px; display: flex; gap: 8px; }
-  .search-bar input { flex: 1; border: 1px solid #d0d0d0; border-radius: 6px; padding: 8px 12px; font-size: 14px; }
-  .search-bar input:focus { outline: none; border-color: #4a90d9; box-shadow: 0 0 0 2px rgba(74,144,217,0.2); }
-  .search-bar button { background: #4a90d9; color: #fff; border: none; border-radius: 6px; padding: 8px 18px; font-size: 14px; cursor: pointer; }
-  .search-bar button:hover { background: #3a7fc0; }
-
-  .content { max-width: 960px; margin: 16px auto; padding: 0 16px; }
-
+  .btn { background: #1a1a2e; color: #fff; border: none; border-radius: 6px; padding: 7px 16px; font-size: 13px; cursor: pointer; }
+  .btn:hover { background: #2a2a4e; }
+  .btn-primary { background: #4a90d9; }
+  .btn-primary:hover { background: #3a7fc0; }
   .status-msg { text-align: center; padding: 40px; color: #888; font-size: 14px; }
 
-  .item-card { background: #fff; border: 1px solid #e0e0e0; border-radius: 10px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
-  .item-card .top-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-  .item-card .category { font-size: 11px; font-weight: 700; text-transform: uppercase; padding: 3px 8px; border-radius: 4px; }
+  /* Cards */
+  .card { background: #fff; border: 1px solid #e0e0e0; border-radius: 10px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+  .card .top-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .card .badge { font-size: 11px; font-weight: 700; text-transform: uppercase; padding: 3px 8px; border-radius: 4px; }
+  .card .meta-row { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: #888; }
+  .card .id-label { font-size: 10px; color: #aaa; font-family: monospace; cursor: pointer; }
+  .card .id-label:hover { color: #4a90d9; }
+
+  /* Knowledge-specific */
   .cat-fact { background: #e8f4fd; color: #1565c0; }
   .cat-opinion { background: #fff3e0; color: #e65100; }
   .cat-decision { background: #e8f5e9; color: #2e7d32; }
   .cat-requirement { background: #f3e5f5; color: #6a1b9a; }
   .cat-concern { background: #fce4ec; color: #c62828; }
-  .item-card .confidence { font-size: 11px; color: #888; margin-left: auto; }
-  .item-card .item-content { font-size: 14px; line-height: 1.6; color: #222; margin-bottom: 10px; }
-  .item-card .meta-row { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: #888; }
-  .item-card .meta-row span { display: flex; align-items: center; gap: 4px; }
-  .item-card .tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
-  .item-card .tag { background: #f0f0f0; border-radius: 4px; padding: 2px 8px; font-size: 11px; color: #555; }
-  .item-card .id-label { font-size: 10px; color: #aaa; font-family: monospace; cursor: pointer; }
-  .item-card .id-label:hover { color: #4a90d9; }
+  .confidence { font-size: 11px; color: #888; margin-left: auto; }
+  .item-content { font-size: 14px; line-height: 1.6; color: #222; margin-bottom: 10px; }
+  .tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
+  .tag { background: #f0f0f0; border-radius: 4px; padding: 2px 8px; font-size: 11px; color: #555; }
 
-  .pagination { display: flex; justify-content: center; gap: 8px; padding: 16px 0 32px; }
+  .summary-bar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .summary-chip { background: #fff; border: 1px solid #e0e0e0; border-radius: 20px; padding: 6px 14px; font-size: 13px; color: #333; cursor: pointer; transition: all 0.15s; }
+  .summary-chip:hover { border-color: #4a90d9; }
+  .summary-chip.active { background: #4a90d9; color: #fff; border-color: #4a90d9; }
+  .summary-chip .count { font-weight: 700; margin-left: 4px; }
+
+  .search-bar { display: flex; gap: 8px; margin-bottom: 12px; }
+  .search-bar input { flex: 1; border: 1px solid #d0d0d0; border-radius: 6px; padding: 8px 12px; font-size: 14px; }
+  .search-bar input:focus { outline: none; border-color: #4a90d9; box-shadow: 0 0 0 2px rgba(74,144,217,0.2); }
+
+  .pagination { display: flex; justify-content: center; gap: 8px; padding: 16px 0; }
   .pagination button { background: #fff; border: 1px solid #d0d0d0; border-radius: 6px; padding: 6px 14px; font-size: 13px; cursor: pointer; }
-  .pagination button:hover { border-color: #4a90d9; }
   .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
   .pagination .page-info { line-height: 32px; font-size: 13px; color: #666; }
+
+  /* Upload zone */
+  .drop-zone { border: 2px dashed #ccc; border-radius: 10px; padding: 32px; text-align: center; color: #888; cursor: pointer; transition: all 0.2s; margin-bottom: 16px; }
+  .drop-zone:hover, .drop-zone.dragover { border-color: #4a90d9; background: #f0f7ff; color: #4a90d9; }
+  .drop-zone input { display: none; }
+  .preview { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 16px; margin-bottom: 12px; max-height: 400px; overflow-y: auto; }
+  .preview pre { font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+  .preview .preview-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .preview .preview-header h3 { font-size: 14px; }
+
+  /* Context/questionnaire cards */
+  .ctx-title { font-size: 15px; font-weight: 600; color: #222; }
+  .ctx-desc { font-size: 13px; color: #555; margin: 6px 0; line-height: 1.5; }
+  .pill-row { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+  .pill { background: #e8f4fd; color: #1565c0; border-radius: 12px; padding: 2px 10px; font-size: 11px; }
 </style>
 </head>
 <body>
 
 <header>
-  <div>
-    <h1>Knowledge Admin</h1>
-  </div>
+  <h1>Admin</h1>
   <div class="nav">
     <a href="index.html">Chat</a>
     <a href="admin.html" class="active">Admin</a>
   </div>
 </header>
 
-<div class="toolbar">
-  <label>Context: <input type="text" id="contextId" value="default"></label>
-  <button onclick="loadData()">Load</button>
-  <div class="spacer"></div>
-  <span id="totalCount" style="font-size:13px;color:#666;"></span>
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('knowledge')">Knowledge</button>
+  <button class="tab" onclick="switchTab('contexts')">Contexts</button>
+  <button class="tab" onclick="switchTab('questionnaires')">Questionnaires</button>
 </div>
 
-<div class="summary-bar" id="summaryBar"></div>
-
-<div class="search-bar">
-  <input type="text" id="searchInput" placeholder="Semantic search across knowledge items...">
-  <button onclick="semanticSearch()">Search</button>
+<!-- ═══════════════ KNOWLEDGE TAB ═══════════════ -->
+<div class="panel active" id="panel-knowledge">
+  <div class="toolbar">
+    <label>Context: <input type="text" id="contextId" value="default"></label>
+    <button class="btn" onclick="loadKnowledge()">Load</button>
+    <div class="spacer"></div>
+    <span id="totalCount" style="font-size:13px;color:#666;"></span>
+  </div>
+  <div class="summary-bar" id="summaryBar"></div>
+  <div class="search-bar">
+    <input type="text" id="searchInput" placeholder="Semantic search across knowledge items...">
+    <button class="btn btn-primary" onclick="semanticSearch()">Search</button>
+  </div>
+  <div id="knowledgeContent"><div class="status-msg">Enter a context ID and click Load.</div></div>
+  <div class="pagination" id="pagination" style="display:none;">
+    <button id="prevBtn" onclick="prevPage()">Previous</button>
+    <span class="page-info" id="pageInfo"></span>
+    <button id="nextBtn" onclick="nextPage()">Next</button>
+  </div>
 </div>
 
-<div class="content" id="content">
-  <div class="status-msg">Enter a context ID and API key, then click Load.</div>
+<!-- ═══════════════ CONTEXTS TAB ═══════════════ -->
+<div class="panel" id="panel-contexts">
+  <div class="toolbar">
+    <span style="font-size:14px;font-weight:600;">Discovery Contexts</span>
+    <div class="spacer"></div>
+    <button class="btn" onclick="loadContexts()">Refresh</button>
+  </div>
+  <div class="drop-zone" id="ctxDropZone">
+    Drop a context JSON file here, or click to browse
+    <input type="file" accept=".json" id="ctxFileInput">
+  </div>
+  <div id="ctxPreview"></div>
+  <div id="ctxList"><div class="status-msg">Click Refresh to load contexts.</div></div>
 </div>
 
-<div class="pagination" id="pagination" style="display:none;">
-  <button id="prevBtn" onclick="prevPage()">Previous</button>
-  <span class="page-info" id="pageInfo"></span>
-  <button id="nextBtn" onclick="nextPage()">Next</button>
+<!-- ═══════════════ QUESTIONNAIRES TAB ═══════════════ -->
+<div class="panel" id="panel-questionnaires">
+  <div class="toolbar">
+    <span style="font-size:14px;font-weight:600;">Questionnaires</span>
+    <div class="spacer"></div>
+    <button class="btn" onclick="loadQuestionnaires()">Refresh</button>
+  </div>
+  <div class="drop-zone" id="qDropZone">
+    Drop a questionnaire JSON file here, or click to browse
+    <input type="file" accept=".json" id="qFileInput">
+  </div>
+  <div id="qPreview"></div>
+  <div id="qList"><div class="status-msg">Click Refresh to load questionnaires.</div></div>
 </div>
 
 <script>
-const API_BASE = 'https://discdev-func-3xr5ve.azurewebsites.net';
-const PAGE_SIZE = 20;
-let currentPage = 0;
-let allItems = [];
-let filteredItems = [];
-let activeCategory = null;
-let summaryData = {};
-let isSearchMode = false;
+const API = 'https://discdev-func-3xr5ve.azurewebsites.net/api';
 
-function apiUrl(path) {
-  return `${API_BASE}${path}`;
+// ─── Tab switching ──────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelector(`.tab[onclick*="${name}"]`).classList.add('active');
+  document.getElementById('panel-' + name).classList.add('active');
 }
-
-function contextId() {
-  return document.getElementById('contextId').value || 'default';
-}
-
-async function loadData() {
-  const ctx = contextId();
-  document.getElementById('content').innerHTML = '<div class="status-msg">Loading...</div>';
-  document.getElementById('summaryBar').innerHTML = '';
-  document.getElementById('pagination').style.display = 'none';
-  isSearchMode = false;
-  activeCategory = null;
-
-  try {
-    // Load items and summary in parallel
-    const [itemsRes, summaryRes] = await Promise.all([
-      fetch(apiUrl(`/api/knowledge/${ctx}?take=500`)),
-      fetch(apiUrl(`/api/knowledge/${ctx}/summary`))
-    ]);
-
-    if (!itemsRes.ok) throw new Error(`Items: HTTP ${itemsRes.status}`);
-
-    allItems = await itemsRes.json();
-    filteredItems = allItems;
-
-    if (summaryRes.ok) {
-      summaryData = await summaryRes.json();
-      renderSummary();
-    }
-
-    document.getElementById('totalCount').textContent = `${allItems.length} items`;
-    currentPage = 0;
-    renderItems();
-  } catch (err) {
-    document.getElementById('content').innerHTML =
-      `<div class="status-msg">Error: ${err.message}</div>`;
-  }
-}
-
-async function semanticSearch() {
-  const q = document.getElementById('searchInput').value.trim();
-  if (!q) { resetToAll(); return; }
-
-  document.getElementById('content').innerHTML = '<div class="status-msg">Searching...</div>';
-  isSearchMode = true;
-  activeCategory = null;
-  renderSummary();
-
-  try {
-    const res = await fetch(apiUrl(`/api/knowledge/${contextId()}/search?q=${encodeURIComponent(q)}`));
-    if (!res.ok) throw new Error(`Search: HTTP ${res.status}`);
-    filteredItems = await res.json();
-    currentPage = 0;
-    document.getElementById('totalCount').textContent = `${filteredItems.length} results`;
-    renderItems();
-  } catch (err) {
-    document.getElementById('content').innerHTML =
-      `<div class="status-msg">Error: ${err.message}</div>`;
-  }
-}
-
-function resetToAll() {
-  isSearchMode = false;
-  activeCategory = null;
-  filteredItems = allItems;
-  currentPage = 0;
-  document.getElementById('totalCount').textContent = `${allItems.length} items`;
-  renderSummary();
-  renderItems();
-}
-
-function filterByCategory(cat) {
-  isSearchMode = false;
-  document.getElementById('searchInput').value = '';
-
-  if (activeCategory === cat) {
-    activeCategory = null;
-    filteredItems = allItems;
-  } else {
-    activeCategory = cat;
-    filteredItems = allItems.filter(i =>
-      (i.category ?? '').toString().toLowerCase() === cat.toLowerCase());
-  }
-  currentPage = 0;
-  document.getElementById('totalCount').textContent = `${filteredItems.length} items`;
-  renderSummary();
-  renderItems();
-}
-
-function renderSummary() {
-  const bar = document.getElementById('summaryBar');
-  const cats = ['Fact', 'Opinion', 'Decision', 'Requirement', 'Concern'];
-  bar.innerHTML = cats.map(cat => {
-    // summaryData keys could be numeric enum values or strings
-    const count = summaryData[cat] ?? summaryData[cat.toLowerCase()] ?? countLocal(cat);
-    const isActive = activeCategory === cat ? ' active' : '';
-    return `<div class="summary-chip${isActive}" onclick="filterByCategory('${cat}')">${cat}<span class="count">${count}</span></div>`;
-  }).join('');
-}
-
-function countLocal(cat) {
-  return allItems.filter(i =>
-    (i.category ?? '').toString().toLowerCase() === cat.toLowerCase() ||
-    (i.category ?? '').toString() === categoryEnumValue(cat)
-  ).length;
-}
-
-function categoryEnumValue(cat) {
-  const map = { Fact: '0', Opinion: '1', Decision: '2', Requirement: '3', Concern: '4' };
-  return map[cat] ?? '';
-}
-
-function categoryName(val) {
-  if (typeof val === 'string' && isNaN(val)) return val;
-  const names = ['Fact', 'Opinion', 'Decision', 'Requirement', 'Concern'];
-  return names[parseInt(val)] ?? val;
-}
-
-function categoryClass(val) {
-  return 'cat-' + categoryName(val).toLowerCase();
-}
-
-function renderItems() {
-  const start = currentPage * PAGE_SIZE;
-  const page = filteredItems.slice(start, start + PAGE_SIZE);
-  const container = document.getElementById('content');
-
-  if (page.length === 0) {
-    container.innerHTML = '<div class="status-msg">No knowledge items found.</div>';
-    document.getElementById('pagination').style.display = 'none';
-    return;
-  }
-
-  container.innerHTML = page.map(item => {
-    const cat = categoryName(item.category);
-    const conf = (item.confidence * 100).toFixed(0);
-    const date = item.extractionTimestamp ? new Date(item.extractionTimestamp).toLocaleString() : '';
-    const tags = (item.tags ?? []).map(t => `<span class="tag">${esc(t)}</span>`).join('');
-
-    return `<div class="item-card">
-      <div class="top-row">
-        <span class="category ${categoryClass(item.category)}">${esc(cat)}</span>
-        <span class="confidence">${conf}% confidence</span>
-      </div>
-      <div class="item-content">${esc(item.content)}</div>
-      <div class="meta-row">
-        <span>User: ${esc(item.sourceUserId)}</span>
-        <span>Context: ${esc(item.relatedContextId)}</span>
-        ${date ? `<span>${date}</span>` : ''}
-      </div>
-      ${tags ? `<div class="tags">${tags}</div>` : ''}
-      <div class="id-label" title="Click to copy" onclick="navigator.clipboard.writeText('${esc(item.id)}')">${esc(item.id)}</div>
-    </div>`;
-  }).join('');
-
-  // Pagination
-  const totalPages = Math.ceil(filteredItems.length / PAGE_SIZE);
-  const pag = document.getElementById('pagination');
-  if (totalPages > 1) {
-    pag.style.display = 'flex';
-    document.getElementById('prevBtn').disabled = currentPage === 0;
-    document.getElementById('nextBtn').disabled = currentPage >= totalPages - 1;
-    document.getElementById('pageInfo').textContent = `Page ${currentPage + 1} of ${totalPages}`;
-  } else {
-    pag.style.display = 'none';
-  }
-}
-
-function prevPage() { if (currentPage > 0) { currentPage--; renderItems(); window.scrollTo(0, 0); } }
-function nextPage() { currentPage++; renderItems(); window.scrollTo(0, 0); }
 
 function esc(s) {
   if (s == null) return '';
@@ -290,15 +169,209 @@ function esc(s) {
   return d.innerHTML;
 }
 
-// Enter key in search
-document.getElementById('searchInput').addEventListener('keydown', e => {
-  if (e.key === 'Enter') semanticSearch();
-});
-// Enter key in context field triggers load
-document.getElementById('contextId').addEventListener('keydown', e => {
-  if (e.key === 'Enter') loadData();
-});
-</script>
+// ═══════════════════════════════════════════════════════════════
+// KNOWLEDGE
+// ═══════════════════════════════════════════════════════════════
+const PAGE_SIZE = 20;
+let currentPage = 0, allItems = [], filteredItems = [], activeCategory = null, summaryData = {};
 
+function ctxId() { return document.getElementById('contextId').value || 'default'; }
+
+async function loadKnowledge() {
+  const el = document.getElementById('knowledgeContent');
+  el.innerHTML = '<div class="status-msg">Loading...</div>';
+  document.getElementById('summaryBar').innerHTML = '';
+  document.getElementById('pagination').style.display = 'none';
+  activeCategory = null;
+  try {
+    const [itemsRes, summaryRes] = await Promise.all([
+      fetch(`${API}/knowledge/${ctxId()}?take=500`),
+      fetch(`${API}/knowledge/${ctxId()}/summary`)
+    ]);
+    if (!itemsRes.ok) throw new Error(`HTTP ${itemsRes.status}`);
+    allItems = await itemsRes.json();
+    filteredItems = allItems;
+    if (summaryRes.ok) { summaryData = await summaryRes.json(); renderSummary(); }
+    document.getElementById('totalCount').textContent = `${allItems.length} items`;
+    currentPage = 0;
+    renderKnowledge();
+  } catch (err) { el.innerHTML = `<div class="status-msg">Error: ${err.message}</div>`; }
+}
+
+async function semanticSearch() {
+  const q = document.getElementById('searchInput').value.trim();
+  if (!q) { filteredItems = allItems; currentPage = 0; renderKnowledge(); return; }
+  const el = document.getElementById('knowledgeContent');
+  el.innerHTML = '<div class="status-msg">Searching...</div>';
+  try {
+    const res = await fetch(`${API}/knowledge/${ctxId()}/search?q=${encodeURIComponent(q)}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    filteredItems = await res.json();
+    currentPage = 0;
+    document.getElementById('totalCount').textContent = `${filteredItems.length} results`;
+    renderKnowledge();
+  } catch (err) { el.innerHTML = `<div class="status-msg">Error: ${err.message}</div>`; }
+}
+
+function filterByCategory(cat) {
+  if (activeCategory === cat) { activeCategory = null; filteredItems = allItems; }
+  else { activeCategory = cat; filteredItems = allItems.filter(i => catName(i.category).toLowerCase() === cat.toLowerCase()); }
+  currentPage = 0;
+  document.getElementById('totalCount').textContent = `${filteredItems.length} items`;
+  renderSummary(); renderKnowledge();
+}
+
+function renderSummary() {
+  const bar = document.getElementById('summaryBar');
+  const cats = ['Fact','Opinion','Decision','Requirement','Concern'];
+  bar.innerHTML = cats.map(c => {
+    const count = summaryData[c] ?? summaryData[c.toLowerCase()] ?? allItems.filter(i => catName(i.category).toLowerCase() === c.toLowerCase()).length;
+    return `<div class="summary-chip${activeCategory===c?' active':''}" onclick="filterByCategory('${c}')">${c}<span class="count">${count}</span></div>`;
+  }).join('');
+}
+
+function catName(v) { if (typeof v==='string'&&isNaN(v)) return v; return ['Fact','Opinion','Decision','Requirement','Concern'][parseInt(v)]??v; }
+
+function renderKnowledge() {
+  const start = currentPage * PAGE_SIZE;
+  const page = filteredItems.slice(start, start + PAGE_SIZE);
+  const el = document.getElementById('knowledgeContent');
+  if (!page.length) { el.innerHTML = '<div class="status-msg">No items found.</div>'; document.getElementById('pagination').style.display='none'; return; }
+  el.innerHTML = page.map(item => {
+    const cat = catName(item.category);
+    const tags = (item.tags??[]).map(t=>`<span class="tag">${esc(t)}</span>`).join('');
+    const date = item.extractionTimestamp ? new Date(item.extractionTimestamp).toLocaleString() : '';
+    return `<div class="card">
+      <div class="top-row"><span class="badge cat-${cat.toLowerCase()}">${esc(cat)}</span><span class="confidence">${(item.confidence*100).toFixed(0)}%</span></div>
+      <div class="item-content">${esc(item.content)}</div>
+      <div class="meta-row"><span>User: ${esc(item.sourceUserId)}</span><span>Context: ${esc(item.relatedContextId)}</span>${date?`<span>${date}</span>`:''}</div>
+      ${tags?`<div class="tags">${tags}</div>`:''}
+      <div class="id-label" onclick="navigator.clipboard.writeText('${esc(item.id)}')">${esc(item.id)}</div>
+    </div>`;
+  }).join('');
+  const totalPages = Math.ceil(filteredItems.length/PAGE_SIZE);
+  const pag = document.getElementById('pagination');
+  if (totalPages>1) { pag.style.display='flex'; document.getElementById('prevBtn').disabled=currentPage===0; document.getElementById('nextBtn').disabled=currentPage>=totalPages-1; document.getElementById('pageInfo').textContent=`Page ${currentPage+1} of ${totalPages}`; }
+  else pag.style.display='none';
+}
+function prevPage(){if(currentPage>0){currentPage--;renderKnowledge();window.scrollTo(0,0);}}
+function nextPage(){currentPage++;renderKnowledge();window.scrollTo(0,0);}
+
+document.getElementById('searchInput').addEventListener('keydown',e=>{if(e.key==='Enter')semanticSearch();});
+document.getElementById('contextId').addEventListener('keydown',e=>{if(e.key==='Enter')loadKnowledge();});
+
+// ═══════════════════════════════════════════════════════════════
+// CONTEXTS
+// ═══════════════════════════════════════════════════════════════
+let ctxPendingDoc = null;
+
+async function loadContexts() {
+  const el = document.getElementById('ctxList');
+  el.innerHTML = '<div class="status-msg">Loading...</div>';
+  try {
+    const res = await fetch(`${API}/admin/contexts`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const contexts = await res.json();
+    if (!contexts.length) { el.innerHTML = '<div class="status-msg">No contexts found.</div>'; return; }
+    el.innerHTML = contexts.map(c => `<div class="card">
+      <div class="ctx-title">${esc(c.name||c.contextId)}</div>
+      <div class="ctx-desc">${esc(c.description)}</div>
+      <div class="meta-row"><span>Mode: ${esc(c.discoveryMode)}</span><span>ID: ${esc(c.contextId)}</span><span>${c.createdAt?new Date(c.createdAt).toLocaleDateString():''}</span></div>
+      ${(c.discoveryAreas||[]).length?`<div class="pill-row">${c.discoveryAreas.map(a=>`<span class="pill">${esc(a)}</span>`).join('')}</div>`:''}
+    </div>`).join('');
+  } catch (err) { el.innerHTML = `<div class="status-msg">Error: ${err.message}</div>`; }
+}
+
+function setupDropZone(zoneId, fileInputId, onFile) {
+  const zone = document.getElementById(zoneId);
+  const input = document.getElementById(fileInputId);
+  zone.addEventListener('click', () => input.click());
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+  zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('dragover'); if(e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0], onFile); });
+  input.addEventListener('change', () => { if(input.files.length) handleFile(input.files[0], onFile); input.value=''; });
+}
+
+function handleFile(file, onFile) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try { const doc = JSON.parse(reader.result); onFile(doc, file.name); }
+    catch(e) { alert('Invalid JSON: ' + e.message); }
+  };
+  reader.readAsText(file);
+}
+
+function onContextFile(doc, fileName) {
+  ctxPendingDoc = doc;
+  const el = document.getElementById('ctxPreview');
+  el.innerHTML = `<div class="preview">
+    <div class="preview-header"><h3>${esc(doc.name||doc.contextId||fileName)}</h3><button class="btn btn-primary" onclick="uploadContext()">Upload Context</button></div>
+    <div class="meta-row" style="margin-bottom:8px;"><span>ID: ${esc(doc.contextId||doc.id)}</span><span>Mode: ${esc(doc.discoveryMode||'')}</span><span>Areas: ${(doc.discoveryAreas||[]).length}</span></div>
+    <pre>${esc(JSON.stringify(doc, null, 2))}</pre>
+  </div>`;
+}
+
+async function uploadContext() {
+  if (!ctxPendingDoc) return;
+  try {
+    const res = await fetch(`${API}/admin/context`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(ctxPendingDoc) });
+    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error||`HTTP ${res.status}`); }
+    const data = await res.json();
+    document.getElementById('ctxPreview').innerHTML = `<div class="status-msg" style="color:#2e7d32;">Uploaded: ${esc(data.contextId)}</div>`;
+    ctxPendingDoc = null;
+    loadContexts();
+  } catch (err) { alert('Upload failed: ' + err.message); }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// QUESTIONNAIRES
+// ═══════════════════════════════════════════════════════════════
+let qPendingDoc = null;
+
+async function loadQuestionnaires() {
+  const el = document.getElementById('qList');
+  el.innerHTML = '<div class="status-msg">Loading...</div>';
+  try {
+    const res = await fetch(`${API}/admin/questionnaires`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const items = await res.json();
+    if (!items.length) { el.innerHTML = '<div class="status-msg">No questionnaires found.</div>'; return; }
+    el.innerHTML = items.map(q => `<div class="card">
+      <div class="ctx-title">${esc(q.title||q.questionnaireId)}</div>
+      <div class="ctx-desc">${esc(q.description)}</div>
+      <div class="meta-row"><span>ID: ${esc(q.questionnaireId)}</span><span>Sections: ${(q.sections||[]).length}</span><span>Questions: ${(q.questions||[]).length}</span><span>${q.uploadedAt?new Date(q.uploadedAt).toLocaleDateString():''}</span></div>
+      ${(q.sections||[]).length?`<div class="pill-row">${q.sections.map(s=>`<span class="pill">${esc(s.title)}</span>`).join('')}</div>`:''}
+    </div>`).join('');
+  } catch (err) { el.innerHTML = `<div class="status-msg">Error: ${err.message}</div>`; }
+}
+
+function onQuestionnaireFile(doc, fileName) {
+  qPendingDoc = doc;
+  const sections = doc.sections||[];
+  const questions = doc.questions||[];
+  const el = document.getElementById('qPreview');
+  el.innerHTML = `<div class="preview">
+    <div class="preview-header"><h3>${esc(doc.title||doc.questionnaireId||fileName)}</h3><button class="btn btn-primary" onclick="uploadQuestionnaire()">Upload Questionnaire</button></div>
+    <div class="meta-row" style="margin-bottom:8px;"><span>ID: ${esc(doc.questionnaireId||doc.id)}</span><span>${sections.length} sections</span><span>${questions.length} questions</span></div>
+    <pre>${esc(JSON.stringify(doc, null, 2))}</pre>
+  </div>`;
+}
+
+async function uploadQuestionnaire() {
+  if (!qPendingDoc) return;
+  try {
+    const res = await fetch(`${API}/admin/questionnaire`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(qPendingDoc) });
+    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error||`HTTP ${res.status}`); }
+    const data = await res.json();
+    document.getElementById('qPreview').innerHTML = `<div class="status-msg" style="color:#2e7d32;">Uploaded: ${esc(data.questionnaireId)} (${data.sections} sections, ${data.questions} questions)</div>`;
+    qPendingDoc = null;
+    loadQuestionnaires();
+  } catch (err) { alert('Upload failed: ' + err.message); }
+}
+
+// ─── Init drop zones ─────────────────────────────────────────
+setupDropZone('ctxDropZone', 'ctxFileInput', onContextFile);
+setupDropZone('qDropZone', 'qFileInput', onQuestionnaireFile);
+</script>
 </body>
 </html>

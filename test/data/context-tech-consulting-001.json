@@ -1,0 +1,38 @@
+{
+  "id": "tech-consulting-001",
+  "contextId": "tech-consulting-001",
+  "name": "Technology Consulting Discovery",
+  "description": "Discovery session for a mid-market technology consulting engagement. Objective: understand the client's current technology landscape, pain points, and strategic goals to develop a transformation roadmap.",
+  "discoveryMode": "Structured",
+  "discoveryAreas": [
+    "Current Technology Environment",
+    "Business Processes & Workflows",
+    "Pain Points & Challenges",
+    "Security & Compliance",
+    "Budget & Resources",
+    "Strategic Goals & Roadmap"
+  ],
+  "keyQuestions": [
+    "What does the current technology stack look like?",
+    "Which systems are mission-critical vs. legacy?",
+    "What are the biggest technology pain points today?",
+    "How does the team handle security and compliance?",
+    "What is the budget envelope for technology transformation?",
+    "What does success look like in 12 months?"
+  ],
+  "sensitiveAreas": [
+    "Specific vendor contract terms",
+    "Employee performance details",
+    "Exact budget figures (ranges are acceptable)"
+  ],
+  "successCriteria": [
+    "Complete understanding of current tech stack",
+    "Identified top 5 pain points with severity ranking",
+    "Clear picture of compliance requirements",
+    "Defined budget range and resource constraints",
+    "Agreed strategic priorities for transformation"
+  ],
+  "agentInstructions": "This is a structured technology consulting discovery. Work through the questionnaire sections in order. For each section, ask the key questions, probe for details, and extract knowledge items. Mark sections complete as you go. Pay special attention to dependencies between systems and any compliance requirements.",
+  "questionnaireIds": ["questionnaire-tech-consulting-001"],
+  "createdAt": "2026-03-24T00:00:00Z"
+}

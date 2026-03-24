@@ -1,0 +1,188 @@
+{
+  "id": "questionnaire-tech-consulting-001",
+  "questionnaireId": "questionnaire-tech-consulting-001",
+  "title": "Technology Consulting Discovery Questionnaire",
+  "description": "Structured questionnaire for technology consulting engagements covering infrastructure, applications, security, and strategic planning.",
+  "sections": [
+    {
+      "sectionId": "current-tech-environment",
+      "title": "Current Technology Environment",
+      "description": "Understanding the existing technology stack, infrastructure, and architecture.",
+      "parentSectionId": null,
+      "order": 1
+    },
+    {
+      "sectionId": "business-processes",
+      "title": "Business Processes & Workflows",
+      "description": "How technology supports day-to-day business operations.",
+      "parentSectionId": null,
+      "order": 2
+    },
+    {
+      "sectionId": "pain-points",
+      "title": "Pain Points & Challenges",
+      "description": "Current frustrations, bottlenecks, and technology debt.",
+      "parentSectionId": null,
+      "order": 3
+    },
+    {
+      "sectionId": "security-compliance",
+      "title": "Security & Compliance",
+      "description": "Security posture, regulatory requirements, and data governance.",
+      "parentSectionId": null,
+      "order": 4
+    },
+    {
+      "sectionId": "budget-resources",
+      "title": "Budget & Resources",
+      "description": "Technology budget, team capabilities, and resource constraints.",
+      "parentSectionId": null,
+      "order": 5
+    },
+    {
+      "sectionId": "strategic-goals",
+      "title": "Strategic Goals & Roadmap",
+      "description": "Vision for technology transformation and success criteria.",
+      "parentSectionId": null,
+      "order": 6
+    }
+  ],
+  "questions": [
+    {
+      "questionId": "cte-001",
+      "sectionId": "current-tech-environment",
+      "text": "What are the primary technology platforms and systems your organization relies on today?",
+      "questionType": "Open",
+      "options": [],
+      "followUpLogic": {},
+      "required": true,
+      "order": 1
+    },
+    {
+      "questionId": "cte-002",
+      "sectionId": "current-tech-environment",
+      "text": "How would you describe your current infrastructure? (On-premises, cloud, hybrid)",
+      "questionType": "MultipleChoice",
+      "options": ["Primarily on-premises", "Primarily cloud", "Hybrid", "Fully cloud-native"],
+      "followUpLogic": { "Primarily on-premises": "Are there plans to migrate to the cloud?" },
+      "required": true,
+      "order": 2
+    },
+    {
+      "questionId": "cte-003",
+      "sectionId": "current-tech-environment",
+      "text": "Which systems are considered mission-critical, and what are their approximate ages?",
+      "questionType": "Open",
+      "options": [],
+      "followUpLogic": {},
+      "required": true,
+      "order": 3
+    },
+    {
+      "questionId": "bp-001",
+      "sectionId": "business-processes",
+      "text": "What are the top 3 business processes most dependent on technology?",
+      "questionType": "Open",
+      "options": [],
+      "followUpLogic": {},
+      "required": true,
+      "order": 1
+    },
+    {
+      "questionId": "bp-002",
+      "sectionId": "business-processes",
+      "text": "How integrated are your key systems? Do they share data automatically or require manual transfer?",
+      "questionType": "Open",
+      "options": [],
+      "followUpLogic": {},
+      "required": true,
+      "order": 2
+    },
+    {
+      "questionId": "pp-001",
+      "sectionId": "pain-points",
+      "text": "What are your biggest technology frustrations right now?",
+      "questionType": "Open",
+      "options": [],
+      "followUpLogic": {},
+      "required": true,
+      "order": 1
+    },
+    {
+      "questionId": "pp-002",
+      "sectionId": "pain-points",
+      "text": "Are there any systems or processes that cause frequent downtime or errors?",
+      "questionType": "Open",
+      "options": [],
+      "followUpLogic": {},
+      "required": true,
+      "order": 2
+    },
+    {
+      "questionId": "sc-001",
+      "sectionId": "security-compliance",
+      "text": "What regulatory or compliance frameworks does your organization need to adhere to?",
+      "questionType": "Open",
+      "options": [],
+      "followUpLogic": {},
+      "required": true,
+      "order": 1
+    },
+    {
+      "questionId": "sc-002",
+      "sectionId": "security-compliance",
+      "text": "How do you currently handle data backup and disaster recovery?",
+      "questionType": "Open",
+      "options": [],
+      "followUpLogic": {},
+      "required": true,
+      "order": 2
+    },
+    {
+      "questionId": "br-001",
+      "sectionId": "budget-resources",
+      "text": "What is the approximate annual technology budget range?",
+      "questionType": "MultipleChoice",
+      "options": ["Under $500K", "$500K - $1M", "$1M - $5M", "$5M - $10M", "Over $10M"],
+      "followUpLogic": {},
+      "required": false,
+      "order": 1
+    },
+    {
+      "questionId": "br-002",
+      "sectionId": "budget-resources",
+      "text": "How large is the internal IT team, and do you use external contractors or MSPs?",
+      "questionType": "Open",
+      "options": [],
+      "followUpLogic": {},
+      "required": true,
+      "order": 2
+    },
+    {
+      "questionId": "sg-001",
+      "sectionId": "strategic-goals",
+      "text": "What does your ideal technology landscape look like in 2-3 years?",
+      "questionType": "Open",
+      "options": [],
+      "followUpLogic": {},
+      "required": true,
+      "order": 1
+    },
+    {
+      "questionId": "sg-002",
+      "sectionId": "strategic-goals",
+      "text": "What would you consider a successful outcome from this technology transformation?",
+      "questionType": "Open",
+      "options": [],
+      "followUpLogic": {},
+      "required": true,
+      "order": 2
+    }
+  ],
+  "metadata": {
+    "version": "1.0",
+    "author": "Discovery Bot Admin",
+    "targetAudience": "Technology leadership and stakeholders"
+  },
+  "uploadedAt": "2026-03-24T00:00:00Z"
+}
