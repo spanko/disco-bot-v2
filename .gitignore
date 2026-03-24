@@ -24,3 +24,4 @@ ctemp*
 *.patch
 publish.zip
 publish-profile.xml
+exceptions.json
