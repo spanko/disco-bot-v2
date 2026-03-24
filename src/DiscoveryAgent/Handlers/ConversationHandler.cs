@@ -90,15 +90,14 @@ public class ConversationHandler : IConversationHandler
         // ─────────────────────────────────────────────────────────────
         // Step 2: Generate response via Responses API
         // ─────────────────────────────────────────────────────────────
-        // Two clients needed (conversation + previousResponseId conflict):
-        //   - conversationClient: binds agent + conversation for the first call
-        //   - agentClient: binds agent only, uses previousResponseId for tool follow-ups
-        var conversationClient = _projectClient.OpenAI.GetProjectResponsesClientForAgent(
+        // Use a single conversation-bound client for ALL calls (initial
+        // + tool follow-ups). This ensures every response is persisted
+        // to the conversation in Cosmos, so subsequent turns see resolved
+        // function calls. Do NOT use previousResponseId — it conflicts
+        // with conversation binding.
+        var responseClient = _projectClient.OpenAI.GetProjectResponsesClientForAgent(
             defaultAgent: _agentManager.AgentName,
             defaultConversationId: conversationId);
-
-        var agentClient = _projectClient.OpenAI.GetProjectResponsesClientForAgent(
-            defaultAgent: _agentManager.AgentName);
 
         _logger.LogInformation(
             "Creating response: Agent={Agent}, Conversation={ConversationId}, Input={InputLen} chars",
@@ -107,20 +106,18 @@ public class ConversationHandler : IConversationHandler
         var responseOptions = new CreateResponseOptions();
         responseOptions.InputItems.Add(ResponseItem.CreateUserMessageItem(request.Message));
 
-        // First call uses conversation-bound client (persists to Cosmos)
-        var response = await conversationClient.CreateResponseAsync(
+        var response = await responseClient.CreateResponseAsync(
             responseOptions, ct);
 
         // ─────────────────────────────────────────────────────────────
         // Step 3: Process function tool calls in a loop
         // ─────────────────────────────────────────────────────────────
-        // Following the Foundry reference pattern:
-        // - Collect ALL output items + function call outputs into inputItems
-        // - Chain with previousResponseId using the agent-only client
-        // - Loop until no more function calls remain
+        // The Responses API returns function_call items when the agent
+        // wants to invoke a tool. We execute locally, submit results as
+        // input items, and re-call on the same conversation-bound client
+        // until no more function calls remain.
         var extractedKnowledgeIds = new List<string>();
         var currentResponse = response.Value;
-        string? previousResponseId = currentResponse.Id;
 
         while (HasFunctionCalls(currentResponse))
         {
@@ -147,14 +144,16 @@ public class ConversationHandler : IConversationHandler
                 }
             }
 
-            // Tool follow-ups use agent-only client + previousResponseId
-            var nextResponse = await agentClient.CreateResponseAsync(
-                previousResponseId: previousResponseId,
-                inputItems: inputItems,
-                cancellationToken: ct);
+            // Submit tool results on the SAME conversation-bound client.
+            // Conversation binding provides continuity — no previousResponseId needed.
+            var followUpOptions = new CreateResponseOptions();
+            foreach (var output in inputItems)
+                followUpOptions.InputItems.Add(output);
+
+            var nextResponse = await responseClient.CreateResponseAsync(
+                followUpOptions, ct);
 
             currentResponse = nextResponse.Value;
-            previousResponseId = currentResponse.Id;
 
             _logger.LogInformation(
                 "Follow-up response: {ResponseId}, Output={OutputLen} chars",
