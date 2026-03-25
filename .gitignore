@@ -25,6 +25,8 @@ settings.json
 ## Build artifacts
 ctemp*
 *.patch
+*.publish.xml
+publish/
 publish.zip
 publish-profile.xml
 exceptions.json
