@@ -28,5 +28,13 @@ ctemp*
 *.publish.xml
 publish/
 publish.zip
+deploy.zip
 publish-profile.xml
 exceptions.json
+infra/main.json
+
+## Word lock files
+~$*
+
+## Stale test scripts
+test/insert-cosmos.csx
