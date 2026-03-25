@@ -18,7 +18,7 @@
 
     <!-- Foundry GA SDK (2.x = new Foundry portal API) -->
     <PackageReference Include="Azure.AI.Projects" Version="2.0.0-beta.*" />
-    <PackageReference Include="Azure.AI.Extensions.OpenAI" Version="1.0.0-beta.*" />
+    <PackageReference Include="Azure.AI.Extensions.OpenAI" Version="2.0.0-beta.*" />
     <PackageReference Include="Azure.AI.OpenAI" Version="2.*" />
     <PackageReference Include="Azure.Identity" Version="1.*" />
 
@@ -26,20 +26,12 @@
     <PackageReference Include="Microsoft.Azure.Cosmos" Version="3.*" />
     <PackageReference Include="Azure.Search.Documents" Version="11.*" />
     <PackageReference Include="Azure.Storage.Blobs" Version="12.*" />
-    <PackageReference Include="Azure.Security.KeyVault.Secrets" Version="4.*" />
-
-    <!-- Document processing -->
-    <PackageReference Include="Azure.AI.DocumentIntelligence" Version="1.*" />
 
     <!-- Observability -->
     <PackageReference Include="Azure.Monitor.OpenTelemetry.AspNetCore" Version="1.*" />
-    <PackageReference Include="Microsoft.Extensions.Logging.ApplicationInsights" Version="2.*" />
-
-    <!-- Bot Framework (Teams channel) -->
-    <PackageReference Include="Microsoft.Bot.Builder" Version="4.*" />
-    <PackageReference Include="Microsoft.Bot.Builder.Integration.AspNet.Core" Version="4.*" />
 
     <!-- Utilities -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.*" />
     <PackageReference Include="System.Text.Json" Version="10.*" />
   </ItemGroup>
 
