@@ -110,17 +110,6 @@ module storage 'modules/storage.bicep' = {
   }
 }
 
-// Key Vault — secrets management
-module keyVault 'modules/key-vault.bicep' = {
-  name: 'deploy-keyvault'
-  params: {
-    keyVaultName: '${baseName}-kv-${uniqueSuffix}'
-    location: location
-    tags: tags
-    deployerObjectId: deployerObjectId
-  }
-}
-
 // App Insights — unified observability (Foundry traces + custom telemetry)
 module appInsights 'modules/app-insights.bicep' = {
   name: 'deploy-appinsights'
@@ -149,29 +138,6 @@ module functionApp 'modules/function-app.bicep' = {
   }
 }
 
-// Bot Service — Teams channel
-module botService 'modules/bot-service.bicep' = {
-  name: 'deploy-bot-service'
-  params: {
-    botName: '${baseName}-bot-${uniqueSuffix}'
-    location: 'global'
-    tags: tags
-    functionAppEndpoint: 'https://${functionApp.outputs.functionAppHostName}'
-    appInsightsKey: appInsights.outputs.instrumentationKey
-  }
-}
-
-// Static Web App — Chat UI + Admin dashboard
-module staticWebApp 'modules/static-web-app.bicep' = {
-  name: 'deploy-static-web-app'
-  params: {
-    staticWebAppName: '${baseName}-web-${uniqueSuffix}'
-    location: location
-    tags: tags
-    functionAppName: functionApp.outputs.functionAppName
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Modules — Security
 // ---------------------------------------------------------------------------
@@ -182,7 +148,6 @@ module rbac 'modules/role-assignments.bicep' = {
     cosmosAccountId: cosmos.outputs.accountId
     searchServiceId: aiSearch.outputs.searchServiceId
     storageAccountId: storage.outputs.storageAccountId
-    keyVaultId: keyVault.outputs.keyVaultId
     functionAppPrincipalId: functionApp.outputs.functionAppPrincipalId
     deployerObjectId: deployerObjectId
   }
@@ -198,9 +163,6 @@ output COSMOS_ENDPOINT string = cosmos.outputs.endpoint
 output COSMOS_DATABASE string = 'discovery'
 output STORAGE_ENDPOINT string = storage.outputs.blobEndpoint
 output AI_SEARCH_ENDPOINT string = aiSearch.outputs.searchEndpoint
-output KEY_VAULT_URI string = keyVault.outputs.vaultUri
 output APP_INSIGHTS_CONNECTION string = appInsights.outputs.connectionString
 output FUNCTION_APP_NAME string = functionApp.outputs.functionAppName
 output FUNCTION_APP_HOSTNAME string = functionApp.outputs.functionAppHostName
-output STATIC_WEB_APP_URL string = staticWebApp.outputs.staticWebAppUrl
-output BOT_NAME string = botService.outputs.botName
