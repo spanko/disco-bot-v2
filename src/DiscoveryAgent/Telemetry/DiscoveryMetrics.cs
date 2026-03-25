@@ -28,6 +28,16 @@ public static class DiscoveryMetrics
     public static readonly Histogram<double> ToolCallDuration =
         Meter.CreateHistogram<double>("discovery.tools.duration_ms", "ms", "Tool call execution time");
 
+    // Token usage
+    public static readonly Counter<long> InputTokens =
+        Meter.CreateCounter<long>("discovery.tokens.input", "tokens", "Input tokens consumed per response");
+    public static readonly Counter<long> OutputTokens =
+        Meter.CreateCounter<long>("discovery.tokens.output", "tokens", "Output tokens consumed per response");
+    public static readonly Counter<long> TotalTokens =
+        Meter.CreateCounter<long>("discovery.tokens.total", "tokens", "Total tokens consumed per response");
+    public static readonly Counter<int> ResponseCalls =
+        Meter.CreateCounter<int>("discovery.tokens.response_calls", "calls", "Number of Responses API calls (initial + follow-ups)");
+
     // Conversations
     public static readonly Counter<int> ConversationsCreated =
         Meter.CreateCounter<int>("discovery.conversations.created", "conversations", "New conversations started");

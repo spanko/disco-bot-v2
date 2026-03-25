@@ -128,6 +128,7 @@ public class ConversationHandler : IConversationHandler
 
         var response = await responseClient.CreateResponseAsync(
             responseOptions, ct);
+        RecordTokenUsage(response.Value);
 
         // ─────────────────────────────────────────────────────────────
         // Step 3: Process function tool calls in a loop
@@ -181,6 +182,7 @@ public class ConversationHandler : IConversationHandler
                 followUpOptions, ct);
 
             currentResponse = nextResponse.Value;
+            RecordTokenUsage(currentResponse);
 
             _logger.LogInformation(
                 "Follow-up response: {ResponseId}, Output={OutputLen} chars",
@@ -207,6 +209,23 @@ public class ConversationHandler : IConversationHandler
         Key Questions: {string.Join("; ", context.KeyQuestions)}
         Please begin the discovery session following your instructions.
         """;
+
+    // ─── Token usage tracking ─────────────────────────────────────────
+
+    private void RecordTokenUsage(ResponseResult response)
+    {
+        DiscoveryMetrics.ResponseCalls.Add(1);
+        var usage = response.Usage;
+        if (usage is null) return;
+
+        DiscoveryMetrics.InputTokens.Add(usage.InputTokenCount);
+        DiscoveryMetrics.OutputTokens.Add(usage.OutputTokenCount);
+        DiscoveryMetrics.TotalTokens.Add(usage.TotalTokenCount);
+
+        _logger.LogInformation(
+            "Token usage: Input={InputTokens}, Output={OutputTokens}, Total={TotalTokens}",
+            usage.InputTokenCount, usage.OutputTokenCount, usage.TotalTokenCount);
+    }
 
     // ─── Function dispatch ───────────────────────────────────────────
 
