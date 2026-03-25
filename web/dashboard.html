@@ -236,7 +236,7 @@ async function refreshKnowledgeStats() {
   const extracted = await queryAppInsights(`customMetrics | where name == "discovery.knowledge.items_extracted" | where timestamp > ago(24h) | summarize total=sum(value)`);
   if (extracted?.rows?.[0]) document.getElementById('totalExtracted').textContent = extracted.rows[0][0] || '0';
 
-  const confidence = await queryAppInsights(`customMetrics | where name == "discovery.knowledge.confidence" | where timestamp > ago(7d) | summarize avg_conf=avg(value)`);
+  const confidence = await queryAppInsights(`customMetrics | where name == "discovery.knowledge.confidence" | where timestamp > ago(7d) | summarize avg_conf=sum(value)/sum(valueCount)`);
   if (confidence?.rows?.[0]) document.getElementById('avgConfidence').textContent = ((confidence.rows[0][0] || 0) * 100).toFixed(0) + '%';
 
   const fails = await queryAppInsights(`customMetrics | where name == "discovery.knowledge.extraction_failures" | where timestamp > ago(24h) | summarize total=sum(value)`);
