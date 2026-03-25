@@ -19,6 +19,9 @@ local.settings.json
 .DS_Store
 Thumbs.db
 
+## Leaked config (func azure functionapp fetch-app-settings output)
+settings.json
+
 ## Build artifacts
 ctemp*
 *.patch
