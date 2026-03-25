@@ -96,7 +96,7 @@
 
 <script>
 const API_BASE = 'https://discdev-func-3xr5ve.azurewebsites.net';
-let conversationId = null;
+let conversationId = sessionStorage.getItem('conversationId') || null;
 let pendingDocuments = []; // {id, fileName, status}
 
 const chat = document.getElementById('chat');
@@ -107,6 +107,11 @@ const statusEl = document.getElementById('status');
 const convDisplay = document.getElementById('convDisplay');
 const fileInput = document.getElementById('fileInput');
 const attachmentsEl = document.getElementById('attachments');
+
+if (conversationId) {
+  convDisplay.textContent = `conv: ${conversationId.slice(0, 20)}...`;
+  statusEl.textContent = 'Session restored';
+}
 
 // Auto-resize textarea
 input.addEventListener('input', () => {
@@ -309,6 +314,7 @@ async function sendMessage() {
 
     const data = await res.json();
     conversationId = data.conversationId;
+    sessionStorage.setItem('conversationId', conversationId);
     convDisplay.textContent = `conv: ${conversationId.slice(0, 20)}...`;
     statusEl.textContent = `Connected - ${data.agentName}`;
 
@@ -328,6 +334,7 @@ async function sendMessage() {
 
 function newConversation() {
   conversationId = null;
+  sessionStorage.removeItem('conversationId');
   chat.innerHTML = '';
   convDisplay.textContent = '';
   statusEl.textContent = 'Ready';
