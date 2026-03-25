@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Discovery Bot - Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; min-height: 100vh; }
+
+  header { background: #1a1a2e; color: #fff; padding: 16px 24px; display: flex; align-items: center; gap: 16px; }
+  header h1 { font-size: 18px; font-weight: 600; }
+  header .nav { display: flex; gap: 8px; margin-left: auto; }
+  header a { color: rgba(255,255,255,0.7); text-decoration: none; font-size: 13px; padding: 6px 14px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.2); }
+  header a:hover, header a.active { color: #fff; background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.4); }
+
+  .grid { max-width: 1100px; margin: 20px auto; padding: 0 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+  .full-width { grid-column: 1 / -1; }
+
+  .card { background: #fff; border: 1px solid #e0e0e0; border-radius: 10px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+  .card h2 { font-size: 14px; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 16px; }
+
+  .health-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; }
+  .health-item { text-align: center; padding: 12px; border-radius: 8px; background: #f8f8f8; }
+  .health-item .indicator { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-bottom: 6px; }
+  .health-item .indicator.ok { background: #4caf50; }
+  .health-item .indicator.failed { background: #f44336; }
+  .health-item .indicator.pending { background: #ff9800; }
+  .health-item .label { font-size: 13px; color: #333; font-weight: 500; }
+
+  .stat-row { display: flex; gap: 16px; flex-wrap: wrap; }
+  .stat { flex: 1; min-width: 100px; text-align: center; padding: 12px; background: #f8f8f8; border-radius: 8px; }
+  .stat .value { font-size: 28px; font-weight: 700; color: #1a1a2e; }
+  .stat .label { font-size: 12px; color: #888; margin-top: 4px; }
+
+  .chart-container { position: relative; height: 220px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 8px 12px; border-bottom: 2px solid #e0e0e0; color: #555; font-weight: 600; }
+  td { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; }
+  tr:hover td { background: #f8f8f8; }
+
+  .config-bar { max-width: 1100px; margin: 16px auto 0; padding: 0 16px; display: flex; gap: 12px; align-items: center; font-size: 12px; color: #888; }
+  .config-bar label { display: flex; align-items: center; gap: 4px; }
+  .config-bar input { border: 1px solid #d0d0d0; border-radius: 4px; padding: 3px 8px; font-size: 12px; width: 280px; }
+  .config-bar button { background: #1a1a2e; color: #fff; border: none; border-radius: 4px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
+  .config-bar button:hover { background: #2a2a4e; }
+
+  .refresh-info { font-size: 11px; color: #aaa; text-align: right; margin-top: 8px; }
+
+  .score-gauge { display: flex; gap: 20px; flex-wrap: wrap; }
+  .gauge { text-align: center; flex: 1; min-width: 100px; }
+  .gauge .score { font-size: 32px; font-weight: 700; }
+  .gauge .score.good { color: #4caf50; }
+  .gauge .score.warn { color: #ff9800; }
+  .gauge .score.bad { color: #f44336; }
+  .gauge .name { font-size: 12px; color: #888; margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Dashboard</h1>
+  <div class="nav">
+    <a href="index.html">Chat</a>
+    <a href="admin.html">Admin</a>
+    <a href="dashboard.html" class="active">Dashboard</a>
+  </div>
+</header>
+
+<div class="config-bar">
+  <label>App Insights App ID: <input id="appId" placeholder="Get from App Insights > API Access"></label>
+  <label>API Key: <input id="apiKey" type="password" placeholder="Create read-only key in API Access"></label>
+  <button onclick="saveConfig(); refreshAll();">Connect</button>
+  <span id="lastRefresh" class="refresh-info"></span>
+</div>
+
+<div class="grid">
+
+  <!-- Health Status -->
+  <div class="card">
+    <h2>Health Status</h2>
+    <div class="health-grid" id="healthGrid">
+      <div class="health-item"><div class="indicator pending"></div><div class="label">Cosmos</div></div>
+      <div class="health-item"><div class="indicator pending"></div><div class="label">AI Search</div></div>
+      <div class="health-item"><div class="indicator pending"></div><div class="label">Storage</div></div>
+      <div class="health-item"><div class="indicator pending"></div><div class="label">API</div></div>
+    </div>
+  </div>
+
+  <!-- Conversation Activity -->
+  <div class="card">
+    <h2>Conversations (24h)</h2>
+    <div class="stat-row" id="convStats">
+      <div class="stat"><div class="value" id="convCreated">-</div><div class="label">Created</div></div>
+      <div class="stat"><div class="value" id="convResumed">-</div><div class="label">Resumed</div></div>
+      <div class="stat"><div class="value" id="avgMessages">-</div><div class="label">Avg Msgs/Session</div></div>
+    </div>
+  </div>
+
+  <!-- Knowledge Extraction -->
+  <div class="card">
+    <h2>Knowledge Extraction</h2>
+    <div class="stat-row">
+      <div class="stat"><div class="value" id="totalExtracted">-</div><div class="label">Items (24h)</div></div>
+      <div class="stat"><div class="value" id="avgConfidence">-</div><div class="label">Avg Confidence</div></div>
+      <div class="stat"><div class="value" id="extractionFails">-</div><div class="label">Failures</div></div>
+    </div>
+    <div class="chart-container" style="margin-top:16px;">
+      <canvas id="extractionChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Agent Quality -->
+  <div class="card">
+    <h2>Agent Quality Scores</h2>
+    <div class="score-gauge" id="qualityGauges">
+      <div class="gauge"><div class="score pending" id="scoreGroundedness">-</div><div class="name">Groundedness</div></div>
+      <div class="gauge"><div class="score pending" id="scoreCoherence">-</div><div class="name">Coherence</div></div>
+      <div class="gauge"><div class="score pending" id="scoreRelevance">-</div><div class="name">Relevance</div></div>
+      <div class="gauge"><div class="score pending" id="scoreAdherence">-</div><div class="name">Task Adherence</div></div>
+    </div>
+  </div>
+
+  <!-- Tool Call Performance -->
+  <div class="card full-width">
+    <h2>Tool Call Performance (24h)</h2>
+    <table id="toolTable">
+      <thead><tr><th>Function</th><th>Calls</th><th>Avg (ms)</th><th>P95 (ms)</th><th>Failures</th></tr></thead>
+      <tbody id="toolTableBody"><tr><td colspan="5" style="text-align:center;color:#888;">Connect to App Insights to view data</td></tr></tbody>
+    </table>
+  </div>
+
+  <!-- Extraction Over Time -->
+  <div class="card full-width">
+    <h2>Conversations Over Time (7d)</h2>
+    <div class="chart-container">
+      <canvas id="conversationChart"></canvas>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const API_BASE = 'https://discdev-func-3xr5ve.azurewebsites.net';
+const AI_API = 'https://api.applicationinsights.io/v1/apps';
+
+let extractionChart = null;
+let conversationChart = null;
+
+function saveConfig() {
+  localStorage.setItem('dashAppId', document.getElementById('appId').value);
+  localStorage.setItem('dashApiKey', document.getElementById('apiKey').value);
+}
+
+function loadConfig() {
+  document.getElementById('appId').value = localStorage.getItem('dashAppId') || '';
+  document.getElementById('apiKey').value = localStorage.getItem('dashApiKey') || '';
+}
+
+function getConfig() {
+  return {
+    appId: document.getElementById('appId').value,
+    apiKey: document.getElementById('apiKey').value,
+  };
+}
+
+async function queryAppInsights(kusto) {
+  const { appId, apiKey } = getConfig();
+  if (!appId || !apiKey) return null;
+  try {
+    const res = await fetch(`${AI_API}/${appId}/query?query=${encodeURIComponent(kusto)}`, {
+      headers: { 'x-api-key': apiKey }
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.tables?.[0];
+  } catch { return null; }
+}
+
+// ─── Health ──────────────────────────────────────────────────
+
+async function refreshHealth() {
+  const grid = document.getElementById('healthGrid');
+  try {
+    const res = await fetch(`${API_BASE}/api/health/ready`);
+    const data = await res.json();
+    const items = [
+      { name: 'Cosmos', status: data.checks?.cosmos || 'failed' },
+      { name: 'AI Search', status: data.checks?.aiSearch || 'failed' },
+      { name: 'Storage', status: data.checks?.storage || 'failed' },
+      { name: 'API', status: res.ok ? 'ok' : 'failed' },
+    ];
+    grid.innerHTML = items.map(i =>
+      `<div class="health-item"><div class="indicator ${i.status}"></div><div class="label">${i.name}</div></div>`
+    ).join('');
+  } catch {
+    grid.innerHTML = ['Cosmos','AI Search','Storage','API'].map(name =>
+      `<div class="health-item"><div class="indicator failed"></div><div class="label">${name}</div></div>`
+    ).join('');
+  }
+}
+
+// ─── Conversation Stats ──────────────────────────────────────
+
+async function refreshConversationStats() {
+  const created = await queryAppInsights(`customMetrics | where name == "discovery.conversations.created" | where timestamp > ago(24h) | summarize total=sum(value)`);
+  if (created?.rows?.[0]) document.getElementById('convCreated').textContent = created.rows[0][0] || '0';
+
+  const resumed = await queryAppInsights(`customMetrics | where name == "discovery.conversations.resumed" | where timestamp > ago(24h) | summarize total=sum(value)`);
+  if (resumed?.rows?.[0]) document.getElementById('convResumed').textContent = resumed.rows[0][0] || '0';
+
+  const msgs = await queryAppInsights(`customMetrics | where name == "discovery.session.message_count" | where timestamp > ago(24h) | summarize avg_msgs=avg(value)`);
+  if (msgs?.rows?.[0]) document.getElementById('avgMessages').textContent = (msgs.rows[0][0] || 0).toFixed(1);
+}
+
+// ─── Knowledge Stats ─────────────────────────────────────────
+
+async function refreshKnowledgeStats() {
+  const extracted = await queryAppInsights(`customMetrics | where name == "discovery.knowledge.items_extracted" | where timestamp > ago(24h) | summarize total=sum(value)`);
+  if (extracted?.rows?.[0]) document.getElementById('totalExtracted').textContent = extracted.rows[0][0] || '0';
+
+  const confidence = await queryAppInsights(`customMetrics | where name == "discovery.knowledge.confidence" | where timestamp > ago(7d) | summarize avg_conf=avg(value)`);
+  if (confidence?.rows?.[0]) document.getElementById('avgConfidence').textContent = ((confidence.rows[0][0] || 0) * 100).toFixed(0) + '%';
+
+  const fails = await queryAppInsights(`customMetrics | where name == "discovery.knowledge.extraction_failures" | where timestamp > ago(24h) | summarize total=sum(value)`);
+  if (fails?.rows?.[0]) document.getElementById('extractionFails').textContent = fails.rows[0][0] || '0';
+
+  // Extraction over time chart
+  const overTime = await queryAppInsights(`customMetrics | where name == "discovery.knowledge.items_extracted" | where timestamp > ago(7d) | summarize total=sum(value) by bin(timestamp, 1d) | order by timestamp asc`);
+  if (overTime?.rows) {
+    const labels = overTime.rows.map(r => new Date(r[0]).toLocaleDateString());
+    const values = overTime.rows.map(r => r[1]);
+    renderExtractionChart(labels, values);
+  }
+}
+
+function renderExtractionChart(labels, values) {
+  const ctx = document.getElementById('extractionChart').getContext('2d');
+  if (extractionChart) extractionChart.destroy();
+  extractionChart = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets: [{ label: 'Items Extracted', data: values, backgroundColor: '#4a90d9', borderRadius: 4 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+  });
+}
+
+// ─── Quality Scores ──────────────────────────────────────────
+
+async function refreshQualityScores() {
+  const scores = await queryAppInsights(`customMetrics | where name startswith "ai.evaluation." | where timestamp > ago(7d) | summarize avg_score=avg(value) by name`);
+  if (!scores?.rows) return;
+
+  const scoreMap = {};
+  for (const row of scores.rows) {
+    const shortName = row[0].replace('ai.evaluation.', '');
+    scoreMap[shortName] = row[1];
+  }
+
+  for (const [key, elId] of [['groundedness','scoreGroundedness'],['coherence','scoreCoherence'],['relevance','scoreRelevance'],['task_adherence','scoreAdherence']]) {
+    const el = document.getElementById(elId);
+    const val = scoreMap[key];
+    if (val != null) {
+      el.textContent = val.toFixed(1);
+      el.className = 'score ' + (val >= 4 ? 'good' : val >= 3 ? 'warn' : 'bad');
+    }
+  }
+}
+
+// ─── Tool Call Performance ───────────────────────────────────
+
+async function refreshToolPerformance() {
+  const perf = await queryAppInsights(`customMetrics | where name == "discovery.tools.duration_ms" | where timestamp > ago(24h) | extend fn = tostring(customDimensions.function) | summarize avg_ms=avg(value), p95_ms=percentile(value, 95), calls=count() by fn`);
+  const fails = await queryAppInsights(`customMetrics | where name == "discovery.errors" | where timestamp > ago(24h) | extend fn = tostring(customDimensions.function) | summarize failures=sum(value) by fn`);
+
+  const tbody = document.getElementById('toolTableBody');
+  if (!perf?.rows?.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#888;">No tool call data in the last 24h</td></tr>';
+    return;
+  }
+
+  const failMap = {};
+  if (fails?.rows) for (const r of fails.rows) failMap[r[0]] = r[1];
+
+  tbody.innerHTML = perf.rows.map(r =>
+    `<tr><td><strong>${esc(r[0])}</strong></td><td>${r[3]}</td><td>${r[1].toFixed(0)}</td><td>${r[2].toFixed(0)}</td><td>${failMap[r[0]] || 0}</td></tr>`
+  ).join('');
+}
+
+// ─── Conversation Over Time ──────────────────────────────────
+
+async function refreshConversationChart() {
+  const data = await queryAppInsights(`customMetrics | where name in ("discovery.conversations.created","discovery.conversations.resumed") | where timestamp > ago(7d) | summarize total=sum(value) by name, bin(timestamp, 1d) | order by timestamp asc`);
+  if (!data?.rows) return;
+
+  const created = {}, resumed = {};
+  for (const r of data.rows) {
+    const day = new Date(r[1]).toLocaleDateString();
+    if (r[0].includes('created')) created[day] = (created[day]||0) + r[2];
+    else resumed[day] = (resumed[day]||0) + r[2];
+  }
+
+  const labels = [...new Set([...Object.keys(created), ...Object.keys(resumed)])].sort();
+  const ctx = document.getElementById('conversationChart').getContext('2d');
+  if (conversationChart) conversationChart.destroy();
+  conversationChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Created', data: labels.map(l => created[l]||0), borderColor: '#4a90d9', backgroundColor: 'rgba(74,144,217,0.1)', fill: true, tension: 0.3 },
+        { label: 'Resumed', data: labels.map(l => resumed[l]||0), borderColor: '#66bb6a', backgroundColor: 'rgba(102,187,106,0.1)', fill: true, tension: 0.3 },
+      ]
+    },
+    options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+  });
+}
+
+function esc(s) {
+  if (s == null) return '';
+  const d = document.createElement('div');
+  d.textContent = String(s);
+  return d.innerHTML;
+}
+
+// ─── Refresh All ─────────────────────────────────────────────
+
+async function refreshAll() {
+  document.getElementById('lastRefresh').textContent = 'Refreshing...';
+  await Promise.all([
+    refreshHealth(),
+    refreshConversationStats(),
+    refreshKnowledgeStats(),
+    refreshQualityScores(),
+    refreshToolPerformance(),
+    refreshConversationChart(),
+  ]);
+  document.getElementById('lastRefresh').textContent = `Last refreshed: ${new Date().toLocaleTimeString()}`;
+}
+
+// ─── Init ────────────────────────────────────────────────────
+
+loadConfig();
+refreshHealth(); // health doesn't need App Insights config
+if (getConfig().appId && getConfig().apiKey) refreshAll();
+
+// Auto-refresh health every 30 seconds
+setInterval(refreshHealth, 30000);
+</script>
+
+</body>
+</html>

@@ -1,5 +1,6 @@
 using Azure.AI.Projects;
 using Azure.Identity;
+using Azure.Monitor.OpenTelemetry.AspNetCore;
 using Azure.Search.Documents;
 using Azure.Storage.Blobs;
 using Microsoft.Azure.Cosmos;
@@ -12,6 +13,7 @@ using DiscoveryAgent.Configuration;
 using DiscoveryAgent.Core.Interfaces;
 using DiscoveryAgent.Handlers;
 using DiscoveryAgent.Services;
+using DiscoveryAgent.Telemetry;
 
 var host = new HostBuilder()
     .ConfigureFunctionsWebApplication()
@@ -23,10 +25,21 @@ var host = new HostBuilder()
             ?? DiscoveryBotSettings.FromEnvironment();
         services.AddSingleton(settings);
 
+        // ── OpenTelemetry + Azure Monitor ────────────────────────────────
+        if (!string.IsNullOrEmpty(settings.AppInsightsConnectionString))
+        {
+            services.AddOpenTelemetry()
+                .UseAzureMonitor(options =>
+                {
+                    options.ConnectionString = settings.AppInsightsConnectionString;
+                })
+                .WithMetrics(metrics =>
+                {
+                    metrics.AddMeter(DiscoveryMetrics.Meter.Name);
+                });
+        }
+
         // ── Azure Credential ────────────────────────────────────────────
-        // DefaultAzureCredential handles both scenarios:
-        // - Local dev: falls through to az login / VS credential
-        // - Production: uses managed identity automatically
         var credential = new DefaultAzureCredential();
 
         // ── Foundry Project Client (GA SDK) ─────────────────────────────

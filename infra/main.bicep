@@ -154,6 +154,26 @@ module rbac 'modules/role-assignments.bicep' = {
 }
 
 // ---------------------------------------------------------------------------
+// Modules — Observability (optional)
+// ---------------------------------------------------------------------------
+
+@description('Enable observability alert rules')
+param enableObservability bool = true
+
+@description('Alert notification email addresses')
+param alertEmails array = []
+
+module observability 'modules/observability.bicep' = if (enableObservability) {
+  name: 'deploy-observability'
+  params: {
+    appInsightsId: appInsights.outputs.appInsightsId
+    location: location
+    tags: tags
+    alertEmails: alertEmails
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Outputs — used by azd and post-provision scripts
 // ---------------------------------------------------------------------------
 

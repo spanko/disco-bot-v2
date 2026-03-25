@@ -5,8 +5,10 @@ using DiscoveryAgent.Configuration;
 using DiscoveryAgent.Core.Interfaces;
 using DiscoveryAgent.Core.Models;
 using DiscoveryAgent.Services;
+using DiscoveryAgent.Telemetry;
 using Microsoft.Extensions.Logging;
 using OpenAI.Responses;
+using System.Diagnostics;
 using System.Text.Json;
 
 namespace DiscoveryAgent.Handlers;
@@ -64,6 +66,7 @@ public class ConversationHandler : IConversationHandler
         if (!string.IsNullOrEmpty(request.ConversationId))
         {
             conversationId = request.ConversationId;
+            DiscoveryMetrics.ConversationsResumed.Add(1);
             _logger.LogInformation("Resuming conversation: {ConversationId}", conversationId);
         }
         else
@@ -87,6 +90,8 @@ public class ConversationHandler : IConversationHandler
                 .CreateProjectConversationAsync(creationOptions, ct);
             conversationId = conversation.Value.Id;
 
+            DiscoveryMetrics.ConversationsCreated.Add(1,
+                new KeyValuePair<string, object?>("contextId", request.ContextId ?? "default"));
             _logger.LogInformation("Created conversation: {ConversationId} for context: {ContextId}",
                 conversationId, request.ContextId ?? "default");
         }
@@ -146,8 +151,15 @@ public class ConversationHandler : IConversationHandler
                 {
                     _logger.LogInformation("Processing tool call: {Function}", functionCall.FunctionName);
 
+                    var sw = Stopwatch.StartNew();
                     var result = await ExecuteFunctionAsync(
                         functionCall, request.UserId, conversationId, request.ContextId);
+                    sw.Stop();
+
+                    DiscoveryMetrics.ToolCallsTotal.Add(1,
+                        new KeyValuePair<string, object?>("function", functionCall.FunctionName));
+                    DiscoveryMetrics.ToolCallDuration.Record(sw.ElapsedMilliseconds,
+                        new KeyValuePair<string, object?>("function", functionCall.FunctionName));
 
                     inputItems.Add(
                         ResponseItem.CreateFunctionCallOutputItem(
@@ -227,6 +239,8 @@ public class ConversationHandler : IConversationHandler
         }
         catch (Exception ex)
         {
+            DiscoveryMetrics.AgentErrors.Add(1,
+                new KeyValuePair<string, object?>("function", functionCall.FunctionName));
             _logger.LogError(ex, "Tool call failed: {Function}", functionCall.FunctionName);
             return new ToolCallResult(
                 JsonSerializer.Serialize(new { error = ex.Message }),
@@ -257,7 +271,11 @@ public class ConversationHandler : IConversationHandler
 
             var storedId = await _knowledgeStore.StoreAsync(ki);
             ids.Add(storedId);
+            DiscoveryMetrics.ExtractionConfidence.Record(item.Confidence);
         }
+
+        DiscoveryMetrics.KnowledgeItemsExtracted.Add(ids.Count,
+            new KeyValuePair<string, object?>("contextId", contextId));
 
         return new(
             JsonSerializer.Serialize(new { stored = ids.Count, ids }),
@@ -288,8 +306,11 @@ public class ConversationHandler : IConversationHandler
             null);
     }
 
-    private static ToolCallResult HandleSectionComplete(string arguments) =>
-        new(JsonSerializer.Serialize(new { status = "section_completed" }), null);
+    private static ToolCallResult HandleSectionComplete(string arguments)
+    {
+        DiscoveryMetrics.SectionsCompleted.Add(1);
+        return new(JsonSerializer.Serialize(new { status = "section_completed" }), null);
+    }
 
     // ─── Document handling ──────────────────────────────────────────
 
