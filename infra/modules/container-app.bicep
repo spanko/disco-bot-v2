@@ -1,0 +1,86 @@
+param containerAppName string
+param containerAppEnvName string
+param containerImage string
+param acrLoginServer string = ''
+param location string
+param tags object = {}
+
+// App settings as params (injected from main.bicep outputs)
+param projectEndpoint string
+param modelDeploymentName string
+param agentName string
+param cosmosEndpoint string
+param cosmosDatabase string
+param storageEndpoint string
+param aiSearchEndpoint string
+param knowledgeIndexName string
+param appInsightsConnectionString string
+
+resource env 'Microsoft.App/managedEnvironments@2024-03-01' = {
+  name: containerAppEnvName
+  location: location
+  tags: tags
+  properties: {
+    zoneRedundant: false
+  }
+}
+
+resource app 'Microsoft.App/containerApps@2024-03-01' = {
+  name: containerAppName
+  location: location
+  tags: tags
+  identity: { type: 'SystemAssigned' }
+  properties: {
+    managedEnvironmentId: env.id
+    configuration: {
+      activeRevisionsMode: 'Single'
+      registries: empty(acrLoginServer) ? [] : [
+        {
+          server: acrLoginServer
+          identity: 'system'
+        }
+      ]
+      ingress: {
+        external: true
+        targetPort: 8080
+        transport: 'http'
+        allowInsecure: false
+      }
+    }
+    template: {
+      containers: [
+        {
+          name: 'discovery-bot'
+          image: containerImage
+          resources: { cpu: json('0.5'), memory: '1Gi' }
+          env: [
+            { name: 'PROJECT_ENDPOINT', value: projectEndpoint }
+            { name: 'MODEL_DEPLOYMENT_NAME', value: modelDeploymentName }
+            { name: 'AGENT_NAME', value: agentName }
+            { name: 'COSMOS_ENDPOINT', value: cosmosEndpoint }
+            { name: 'COSMOS_DATABASE', value: cosmosDatabase }
+            { name: 'STORAGE_ENDPOINT', value: storageEndpoint }
+            { name: 'AI_SEARCH_ENDPOINT', value: aiSearchEndpoint }
+            { name: 'KNOWLEDGE_INDEX_NAME', value: knowledgeIndexName }
+            { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsightsConnectionString }
+            { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
+          ]
+        }
+      ]
+      scale: {
+        minReplicas: 0
+        maxReplicas: 5
+        rules: [
+          {
+            name: 'http-scaling'
+            http: { metadata: { concurrentRequests: '10' } }
+          }
+        ]
+      }
+    }
+  }
+}
+
+output containerAppName string = app.name
+output containerAppFqdn string = app.properties.configuration.ingress.fqdn
+output containerAppPrincipalId string = app.identity.principalId

@@ -3,14 +3,8 @@ metadata:
   template: disco-bot-v2
 services:
   api:
-    project: src/DiscoveryAgent
+    project: .
     language: csharp
-    host: function
-  web:
-    project: web
-    language: html
-    host: staticwebapp
-hooks:
-  postprovision:
-    shell: sh
-    run: infra/scripts/post-provision.sh
+    host: containerapp
+    docker:
+      path: Dockerfile

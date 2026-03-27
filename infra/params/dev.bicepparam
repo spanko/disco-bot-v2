@@ -3,13 +3,7 @@ using '../main.bicep'
 param prefix = 'disco'
 param suffix = 'dev'
 param primaryModelName = 'gpt-4.1'
-param primaryModelVersion = '2025-04-14'
-param primaryModelCapacity = 30
-param fallbackModelName = 'gpt-4.1-mini'
-param fallbackModelVersion = '2025-04-14'
-param fallbackModelCapacity = 20
-param deployerObjectId = '' // TODO: Fill with your Azure AD Object ID
-param enablePublicAccess = true
+param deployerObjectId = 'd9a4dcc0-50de-4c43-b46b-4d81233e3b1b'
 param cosmosConsistency = 'Session'
 param tags = {
   project: 'discovery-bot-v2'

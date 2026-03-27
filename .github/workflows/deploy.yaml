@@ -1,4 +1,4 @@
-name: Deploy to Azure Functions
+name: Build and Deploy
 
 on:
   push:
@@ -6,49 +6,38 @@ on:
   workflow_dispatch:
 
 env:
-  AZURE_FUNCTIONAPP_NAME: discdev-func-3xr5ve
-  AZURE_STORAGE_ACCOUNT: discdevstor3xr5ve
-  DOTNET_VERSION: '9.0.x'
-  PROJECT_PATH: src/DiscoveryAgent
+  ACR_NAME: discodevacrvjnr3y
+  IMAGE_NAME: discovery-bot
+  ACA_NAME: discodev-app-vjnr3y
+  RESOURCE_GROUP: discovery-dev
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
-
-      - name: Publish
-        run: dotnet publish ${{ env.PROJECT_PATH }} -c Release -o ./output
-
-      - name: Deploy to Azure Functions
-        uses: Azure/functions-action@v1
-        with:
-          app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
-          package: ./output
-          publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
-
-  deploy-web:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Azure Login
+      - name: Azure Login (workload identity)
         uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Upload to static website
-        uses: azure/CLI@v2
-        with:
-          inlineScript: |
-            az storage blob upload-batch \
-              --account-name ${{ env.AZURE_STORAGE_ACCOUNT }} \
-              --destination '$web' \
-              --source web/ \
-              --overwrite \
-              --auth-mode login
+      - name: Build and push to ACR
+        run: |
+          az acr build \
+            --registry $ACR_NAME \
+            --image $IMAGE_NAME:${{ github.sha }} \
+            --image $IMAGE_NAME:latest \
+            .
+
+      - name: Deploy to Container Apps
+        run: |
+          az containerapp update \
+            --name $ACA_NAME \
+            --resource-group $RESOURCE_GROUP \
+            --image $ACR_NAME.azurecr.io/$IMAGE_NAME:${{ github.sha }}
