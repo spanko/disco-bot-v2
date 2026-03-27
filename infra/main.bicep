@@ -22,7 +22,7 @@ param location string = resourceGroup().location
 param tags object = {}
 
 @description('Primary model deployment name')
-param primaryModelName string = 'gpt-4.1'
+param primaryModelName string = 'gpt-4o'
 
 @description('Deployer AAD Object ID for RBAC')
 param deployerObjectId string

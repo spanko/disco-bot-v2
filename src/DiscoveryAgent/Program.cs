@@ -16,9 +16,7 @@ using System.Text.Json;
 var builder = WebApplication.CreateBuilder(args);
 
 // ── Configuration ───────────────────────────────────────────────
-var config = builder.Configuration;
-var settings = config.GetSection("DiscoveryBot").Get<DiscoveryBotSettings>()
-    ?? DiscoveryBotSettings.FromEnvironment();
+var settings = DiscoveryBotSettings.FromEnvironment();
 builder.Services.AddSingleton(settings);
 
 // ── OpenTelemetry + Azure Monitor ────────────────────────────────
