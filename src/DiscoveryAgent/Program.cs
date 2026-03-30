@@ -17,6 +17,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // ── Configuration ───────────────────────────────────────────────
 var settings = DiscoveryBotSettings.FromEnvironment();
+settings.Validate();
 builder.Services.AddSingleton(settings);
 
 // ── OpenTelemetry + Azure Monitor ────────────────────────────────
@@ -113,11 +114,14 @@ app.MapGet("/health", () =>
     Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
 
 app.MapGet("/health/ready", async (
+    IAgentManager agentManager,
     CosmosClient cosmosClient,
     SearchClient searchClient,
     BlobServiceClient blobClient) =>
 {
     var checks = new Dictionary<string, string>();
+
+    checks["agent"] = agentManager.IsInitialized ? "ok" : "not_initialized";
 
     try { await cosmosClient.ReadAccountAsync(); checks["cosmos"] = "ok"; }
     catch { checks["cosmos"] = "failed"; }

@@ -27,6 +27,7 @@ public class AgentManager : IAgentManager
     private string? _resolvedAgentVersion;
 
     public string AgentName => _settings.AgentName;
+    public bool IsInitialized => _initialized;
 
     /// <summary>
     /// The resolved agent name after initialization (from CreateAgentVersion response).

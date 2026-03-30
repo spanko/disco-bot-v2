@@ -9,6 +9,7 @@ namespace DiscoveryAgent.Core.Interfaces;
 public interface IAgentManager
 {
     string AgentName { get; }
+    bool IsInitialized { get; }
     Task EnsureAgentExistsAsync(CancellationToken ct = default);
     Task<string> GetInstructionsAsync();
     string BuildContextualInstructions(DiscoveryContext context);

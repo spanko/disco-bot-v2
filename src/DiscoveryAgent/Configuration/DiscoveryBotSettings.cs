@@ -46,6 +46,23 @@ public class DiscoveryBotSettings
         AppInsightsConnectionString = Env("APPLICATIONINSIGHTS_CONNECTION_STRING"),
     };
 
+    /// <summary>
+    /// Validates that all required environment variables are set.
+    /// Call after FromEnvironment() to fail fast with a clear message.
+    /// </summary>
+    public void Validate()
+    {
+        var missing = new List<string>();
+        if (string.IsNullOrEmpty(ProjectEndpoint)) missing.Add("PROJECT_ENDPOINT");
+        if (string.IsNullOrEmpty(CosmosEndpoint)) missing.Add("COSMOS_ENDPOINT");
+        if (string.IsNullOrEmpty(StorageEndpoint)) missing.Add("STORAGE_ENDPOINT");
+        if (string.IsNullOrEmpty(AiSearchEndpoint)) missing.Add("AI_SEARCH_ENDPOINT");
+
+        if (missing.Count > 0)
+            throw new InvalidOperationException(
+                $"Missing required environment variables: {string.Join(", ", missing)}");
+    }
+
     private static string Env(string key, string fallback = "")
         => Environment.GetEnvironmentVariable(key) ?? fallback;
 }

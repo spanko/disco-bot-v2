@@ -160,6 +160,7 @@ module rbac 'modules/role-assignments.bicep' = {
   name: 'deploy-rbac'
   params: {
     cosmosAccountId: cosmos.outputs.accountId
+    cosmosAccountName: cosmos.outputs.accountName
     searchServiceId: aiSearch.outputs.searchServiceId
     storageAccountId: storage.outputs.storageAccountId
     appPrincipalId: containerApp.outputs.containerAppPrincipalId

@@ -1,6 +1,10 @@
 name: discovery-chatbot-v2
 metadata:
   template: disco-bot-v2
+hooks:
+  postprovision:
+    shell: sh
+    run: infra/scripts/post-provision.sh
 services:
   api:
     project: .

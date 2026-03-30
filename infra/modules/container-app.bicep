@@ -65,6 +65,20 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsightsConnectionString }
             { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
           ]
+          probes: [
+            {
+              type: 'Liveness'
+              httpGet: { path: '/health', port: 8080 }
+              initialDelaySeconds: 10
+              periodSeconds: 30
+            }
+            {
+              type: 'Readiness'
+              httpGet: { path: '/health/ready', port: 8080 }
+              initialDelaySeconds: 15
+              periodSeconds: 30
+            }
+          ]
         }
       ]
       scale: {
