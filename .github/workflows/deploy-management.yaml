@@ -1,0 +1,48 @@
+name: Build and Deploy Management Plane
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/ManagementPlane/**'
+      - 'Dockerfile.management'
+      - 'infra/management-plane.bicep'
+  workflow_dispatch:
+
+env:
+  ACR_NAME: discodevacrvjnr3y
+  IMAGE_NAME: management-plane
+  ACA_NAME: disco-mgmt-app
+  RESOURCE_GROUP: discovery-management
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login (workload identity)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build and push to ACR
+        run: |
+          az acr build \
+            --registry $ACR_NAME \
+            --image $IMAGE_NAME:${{ github.sha }} \
+            --image $IMAGE_NAME:latest \
+            --file Dockerfile.management \
+            .
+
+      - name: Deploy to Container Apps
+        run: |
+          az containerapp update \
+            --name $ACA_NAME \
+            --resource-group $RESOURCE_GROUP \
+            --image $ACR_NAME.azurecr.io/$IMAGE_NAME:${{ github.sha }}
