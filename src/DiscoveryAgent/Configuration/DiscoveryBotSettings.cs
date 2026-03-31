@@ -26,6 +26,13 @@ public class DiscoveryBotSettings
     // Conversation mode: lightweight | standard | full
     public string ConversationMode { get; set; } = "standard";
 
+    // Auth: none | magic_link | invite_code | entra_external
+    public string AuthMode { get; set; } = "none";
+    public string JwtSigningKey { get; set; } = "";
+    public string EntraTenantId { get; set; } = "";
+    public string EntraClientId { get; set; } = "";
+    public int MagicLinkExpiryHours { get; set; } = 24;
+
     // Agent configuration
     public string InstructionsPath { get; set; } = "config/instructions.md";
 
@@ -46,6 +53,11 @@ public class DiscoveryBotSettings
         StorageEndpoint = Env("STORAGE_ENDPOINT"),
         AiSearchEndpoint = Env("AI_SEARCH_ENDPOINT"),
         KnowledgeIndexName = Env("KNOWLEDGE_INDEX_NAME", "knowledge-items"),
+        AuthMode = Env("AUTH_MODE", "none"),
+        JwtSigningKey = Env("JWT_SIGNING_KEY"),
+        EntraTenantId = Env("ENTRA_TENANT_ID"),
+        EntraClientId = Env("ENTRA_CLIENT_ID"),
+        MagicLinkExpiryHours = int.TryParse(Env("MAGIC_LINK_EXPIRY_HOURS", "24"), out var h) ? h : 24,
         InstructionsPath = Env("INSTRUCTIONS_PATH", "config/instructions.md"),
         AppInsightsConnectionString = Env("APPLICATIONINSIGHTS_CONNECTION_STRING"),
     };
@@ -68,9 +80,17 @@ public class DiscoveryBotSettings
             if (string.IsNullOrEmpty(AiSearchEndpoint)) missing.Add("AI_SEARCH_ENDPOINT");
         }
 
+        if (AuthMode is "magic_link" && string.IsNullOrEmpty(JwtSigningKey))
+            missing.Add("JWT_SIGNING_KEY (required for magic_link auth)");
+        if (AuthMode is "entra_external")
+        {
+            if (string.IsNullOrEmpty(EntraTenantId)) missing.Add("ENTRA_TENANT_ID");
+            if (string.IsNullOrEmpty(EntraClientId)) missing.Add("ENTRA_CLIENT_ID");
+        }
+
         if (missing.Count > 0)
             throw new InvalidOperationException(
-                $"Missing required environment variables for '{ConversationMode}' mode: {string.Join(", ", missing)}");
+                $"Missing required environment variables for '{ConversationMode}' mode, '{AuthMode}' auth: {string.Join(", ", missing)}");
     }
 
     private static string Env(string key, string fallback = "")

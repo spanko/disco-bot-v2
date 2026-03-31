@@ -23,6 +23,7 @@
 
     <!-- Observability -->
     <PackageReference Include="Azure.Monitor.OpenTelemetry.AspNetCore" Version="1.*" />
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.17.0" />
 
     <!-- Utilities -->
     <PackageReference Include="Newtonsoft.Json" Version="13.*" />

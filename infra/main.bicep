@@ -35,6 +35,10 @@ param cosmosConsistency string = 'Session'
 @allowed(['lightweight', 'standard', 'full'])
 param conversationMode string = 'standard'
 
+@description('Auth mode: none, magic_link, invite_code, or entra_external')
+@allowed(['none', 'magic_link', 'invite_code', 'entra_external'])
+param authMode string = 'none'
+
 @description('Container image tag (default: latest). Set to empty string for initial deploy with placeholder image.')
 param imageTag string = ''
 
@@ -154,6 +158,7 @@ module containerApp 'modules/container-app.bicep' = {
     knowledgeIndexName: 'knowledge-items'
     appInsightsConnectionString: appInsights.outputs.connectionString
     conversationMode: conversationMode
+    authMode: authMode
   }
 }
 

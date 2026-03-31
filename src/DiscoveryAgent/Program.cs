@@ -4,6 +4,7 @@ using Azure.Monitor.OpenTelemetry.AspNetCore;
 using Azure.Search.Documents;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
+using DiscoveryAgent.Auth;
 using DiscoveryAgent.Configuration;
 using DiscoveryAgent.Core.Interfaces;
 using DiscoveryAgent.Core.Models;
@@ -86,6 +87,16 @@ else
     builder.Services.AddScoped<IConversationHandler, ConversationHandler>();
 }
 
+// ── Auth ─────────────────────────────────────────────────────────
+IAuthService authService = settings.AuthMode switch
+{
+    "magic_link" => new MagicLinkAuthService(settings),
+    "invite_code" => new InviteCodeAuthService(settings),
+    "entra_external" => new EntraAuthService(),
+    _ => new NoneAuthService(),
+};
+builder.Services.AddSingleton(authService);
+
 var app = builder.Build();
 
 // =====================================================================
@@ -110,6 +121,12 @@ catch (Exception ex)
 
 // ── Static files (web UI from wwwroot/) ─────────────────────────
 app.UseStaticFiles();
+
+// ── Auth middleware (skips /health, /api/auth/*, and static files) ──
+if (settings.AuthMode != "none")
+{
+    app.UseMiddleware<AuthMiddleware>();
+}
 
 // ── JSON options ────────────────────────────────────────────────
 var jsonOpts = new JsonSerializerOptions
@@ -159,6 +176,97 @@ app.MapGet("/health/ready", async (
     return allHealthy
         ? Results.Ok(new { status = "healthy", checks, timestamp = DateTime.UtcNow })
         : Results.Json(new { status = "degraded", checks, timestamp = DateTime.UtcNow }, statusCode: 503);
+});
+
+// =====================================================================
+// Auth API endpoints
+// =====================================================================
+
+app.MapGet("/api/auth/mode", () =>
+    Results.Ok(new { authMode = settings.AuthMode }));
+
+if (settings.AuthMode == "magic_link")
+{
+    var magicLinkService = (MagicLinkAuthService)authService;
+
+    app.MapPost("/api/auth/magic-link", (HttpRequest req) =>
+    {
+        var body = req.ReadFromJsonAsync<MagicLinkRequest>().Result;
+        if (body is null || string.IsNullOrEmpty(body.Email))
+            return Results.BadRequest(new { error = "Email is required" });
+
+        var token = magicLinkService.GenerateToken(body.Email, body.ContextId);
+        var host = $"{req.Scheme}://{req.Host}";
+        var verifyUrl = $"{host}/api/auth/verify?token={Uri.EscapeDataString(token)}";
+
+        return Results.Ok(new
+        {
+            token,
+            verifyUrl,
+            expiresInHours = settings.MagicLinkExpiryHours,
+        });
+    });
+
+    app.MapGet("/api/auth/verify", async (string token, HttpResponse response) =>
+    {
+        var result = await magicLinkService.ValidateTokenAsync(token);
+        if (!result.IsAuthenticated)
+            return Results.Json(new { error = "Invalid or expired token" }, statusCode: 401);
+
+        response.Cookies.Append(MagicLinkAuthService.CookieName, token, new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = true,
+            SameSite = SameSiteMode.Lax,
+            MaxAge = TimeSpan.FromHours(settings.MagicLinkExpiryHours),
+        });
+
+        // Redirect to home page after successful verification
+        return Results.Redirect("/");
+    });
+}
+
+if (settings.AuthMode == "invite_code")
+{
+    var inviteCodeService = (InviteCodeAuthService)authService;
+
+    app.MapPost("/api/auth/validate-code", (HttpRequest req, HttpResponse response) =>
+    {
+        var body = req.ReadFromJsonAsync<InviteCodeRequest>().Result;
+        if (body is null || string.IsNullOrEmpty(body.Code))
+            return Results.BadRequest(new { error = "Code is required" });
+
+        var contextId = inviteCodeService.ValidateCode(body.Code);
+        if (contextId is null)
+            return Results.Json(new { error = "Invalid invite code" }, statusCode: 401);
+
+        var userId = body.DisplayName ?? $"invite-{Guid.NewGuid():N}"[..16];
+        var sessionToken = inviteCodeService.GenerateSessionToken(contextId, userId);
+
+        if (sessionToken is not null)
+        {
+            response.Cookies.Append(InviteCodeAuthService.CookieName, sessionToken, new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = true,
+                SameSite = SameSiteMode.Lax,
+                MaxAge = TimeSpan.FromHours(12),
+            });
+        }
+
+        return Results.Ok(new
+        {
+            contextId,
+            userId,
+            authenticated = true,
+        });
+    });
+}
+
+app.MapPost("/api/auth/logout", (HttpResponse response) =>
+{
+    response.Cookies.Delete("disco-auth");
+    return Results.Ok(new { status = "logged_out" });
 });
 
 // =====================================================================
@@ -450,3 +558,7 @@ app.MapGet("/api/documents/{documentId}/content", async (
 app.MapFallbackToFile("index.html");
 
 app.Run();
+
+// ── Auth request models ──────────────────────────────────────────
+record MagicLinkRequest(string Email, string? ContextId);
+record InviteCodeRequest(string Code, string? DisplayName);

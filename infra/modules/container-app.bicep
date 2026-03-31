@@ -20,6 +20,10 @@ param appInsightsConnectionString string
 @allowed(['lightweight', 'standard', 'full'])
 param conversationMode string = 'standard'
 
+@description('Auth mode: none, magic_link, invite_code, or entra_external')
+@allowed(['none', 'magic_link', 'invite_code', 'entra_external'])
+param authMode string = 'none'
+
 resource env 'Microsoft.App/managedEnvironments@2024-03-01' = {
   name: containerAppEnvName
   location: location
@@ -68,6 +72,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'KNOWLEDGE_INDEX_NAME', value: knowledgeIndexName }
             { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsightsConnectionString }
             { name: 'CONVERSATION_MODE', value: conversationMode }
+            { name: 'AUTH_MODE', value: authMode }
             { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
           ]
           probes: [
