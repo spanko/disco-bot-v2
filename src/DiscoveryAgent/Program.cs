@@ -9,6 +9,7 @@ using DiscoveryAgent.Core.Interfaces;
 using DiscoveryAgent.Core.Models;
 using DiscoveryAgent.Handlers;
 using DiscoveryAgent.Services;
+using DiscoveryAgent.Services.Lightweight;
 using DiscoveryAgent.Telemetry;
 using Microsoft.Azure.Cosmos;
 using System.Text.Json;
@@ -41,38 +42,49 @@ var credential = new DefaultAzureCredential();
 builder.Services.AddSingleton(_ =>
     new AIProjectClient(new Uri(settings.ProjectEndpoint), credential));
 
-// ── BYO Cosmos DB ───────────────────────────────────────────────
-builder.Services.AddSingleton(_ =>
-    new CosmosClient(settings.CosmosEndpoint, credential, new CosmosClientOptions
-    {
-        SerializerOptions = new CosmosSerializationOptions
-        {
-            PropertyNamingPolicy = CosmosPropertyNamingPolicy.CamelCase,
-        },
-    }));
-builder.Services.AddSingleton(sp =>
-    sp.GetRequiredService<CosmosClient>().GetDatabase(settings.CosmosDatabase));
-
-// ── BYO AI Search ───────────────────────────────────────────────
-builder.Services.AddSingleton(_ =>
-    new SearchClient(
-        new Uri(settings.AiSearchEndpoint),
-        settings.KnowledgeIndexName,
-        credential));
-
-// ── BYO Blob Storage ────────────────────────────────────────────
-builder.Services.AddSingleton(_ =>
-    new BlobServiceClient(new Uri(settings.StorageEndpoint), credential));
-
-// ── Application Services ────────────────────────────────────────
+// ── Application Services (mode-dependent) ────────────────────────
 builder.Services.AddSingleton<IAgentManager, AgentManager>();
-builder.Services.AddSingleton<IKnowledgeStore, KnowledgeStore>();
-builder.Services.AddSingleton<IKnowledgeQueryService, KnowledgeQueryService>();
-builder.Services.AddSingleton<IContextManagementService, ContextManagementService>();
-builder.Services.AddSingleton<IQuestionnaireProcessor, QuestionnaireProcessor>();
-builder.Services.AddSingleton<IUserProfileService, UserProfileService>();
 
-builder.Services.AddScoped<IConversationHandler, ConversationHandler>();
+if (settings.IsLightweight)
+{
+    // Lightweight mode: no Cosmos, no AI Search, no Blob Storage
+    builder.Services.AddSingleton<IKnowledgeStore, NullKnowledgeStore>();
+    builder.Services.AddSingleton<IKnowledgeQueryService, NullKnowledgeQueryService>();
+    builder.Services.AddSingleton<IContextManagementService, NullContextManagementService>();
+    builder.Services.AddSingleton<IQuestionnaireProcessor, NullQuestionnaireProcessor>();
+    builder.Services.AddSingleton<IUserProfileService, NullUserProfileService>();
+    builder.Services.AddScoped<IConversationHandler, LightweightConversationHandler>();
+}
+else
+{
+    // Standard/Full mode: register BYO infrastructure clients
+    builder.Services.AddSingleton(_ =>
+        new CosmosClient(settings.CosmosEndpoint, credential, new CosmosClientOptions
+        {
+            SerializerOptions = new CosmosSerializationOptions
+            {
+                PropertyNamingPolicy = CosmosPropertyNamingPolicy.CamelCase,
+            },
+        }));
+    builder.Services.AddSingleton(sp =>
+        sp.GetRequiredService<CosmosClient>().GetDatabase(settings.CosmosDatabase));
+
+    builder.Services.AddSingleton(_ =>
+        new SearchClient(
+            new Uri(settings.AiSearchEndpoint),
+            settings.KnowledgeIndexName,
+            credential));
+
+    builder.Services.AddSingleton(_ =>
+        new BlobServiceClient(new Uri(settings.StorageEndpoint), credential));
+
+    builder.Services.AddSingleton<IKnowledgeStore, KnowledgeStore>();
+    builder.Services.AddSingleton<IKnowledgeQueryService, KnowledgeQueryService>();
+    builder.Services.AddSingleton<IContextManagementService, ContextManagementService>();
+    builder.Services.AddSingleton<IQuestionnaireProcessor, QuestionnaireProcessor>();
+    builder.Services.AddSingleton<IUserProfileService, UserProfileService>();
+    builder.Services.AddScoped<IConversationHandler, ConversationHandler>();
+}
 
 var app = builder.Build();
 
@@ -114,25 +126,36 @@ app.MapGet("/health", () =>
     Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
 
 app.MapGet("/health/ready", async (
-    IAgentManager agentManager,
-    CosmosClient cosmosClient,
-    SearchClient searchClient,
-    BlobServiceClient blobClient) =>
+    IServiceProvider sp,
+    IAgentManager agentManager) =>
 {
     var checks = new Dictionary<string, string>();
 
     checks["agent"] = agentManager.IsInitialized ? "ok" : "not_initialized";
+    checks["mode"] = settings.ConversationMode;
 
-    try { await cosmosClient.ReadAccountAsync(); checks["cosmos"] = "ok"; }
-    catch { checks["cosmos"] = "failed"; }
+    var cosmosClient = sp.GetService<CosmosClient>();
+    if (cosmosClient is not null)
+    {
+        try { await cosmosClient.ReadAccountAsync(); checks["cosmos"] = "ok"; }
+        catch { checks["cosmos"] = "failed"; }
+    }
 
-    try { await searchClient.GetDocumentCountAsync(); checks["aiSearch"] = "ok"; }
-    catch { checks["aiSearch"] = "failed"; }
+    var searchClient = sp.GetService<SearchClient>();
+    if (searchClient is not null)
+    {
+        try { await searchClient.GetDocumentCountAsync(); checks["aiSearch"] = "ok"; }
+        catch { checks["aiSearch"] = "failed"; }
+    }
 
-    try { await blobClient.GetPropertiesAsync(); checks["storage"] = "ok"; }
-    catch { checks["storage"] = "failed"; }
+    var blobClient = sp.GetService<BlobServiceClient>();
+    if (blobClient is not null)
+    {
+        try { await blobClient.GetPropertiesAsync(); checks["storage"] = "ok"; }
+        catch { checks["storage"] = "failed"; }
+    }
 
-    var allHealthy = checks.Values.All(v => v == "ok");
+    var allHealthy = checks.Values.All(v => v is "ok" or "lightweight" or "standard" or "full");
     return allHealthy
         ? Results.Ok(new { status = "healthy", checks, timestamp = DateTime.UtcNow })
         : Results.Json(new { status = "degraded", checks, timestamp = DateTime.UtcNow }, statusCode: 503);
@@ -219,60 +242,66 @@ app.MapGet("/api/manage/contexts", async (IContextManagementService contextServi
     return Results.Ok(contexts);
 });
 
-app.MapPost("/api/manage/context", async (
-    HttpRequest req,
-    Database cosmosDb,
-    ILogger<Program> log) =>
+if (!settings.IsLightweight)
 {
-    var context = await JsonSerializer.DeserializeAsync<DiscoveryContext>(req.Body, jsonOpts);
-    if (context is null || string.IsNullOrEmpty(context.ContextId))
-        return Results.BadRequest(new { error = "Invalid context: contextId is required" });
-
-    var container = cosmosDb.GetContainer("discovery-sessions");
-    var doc = context with { Id = context.ContextId };
-    await container.UpsertItemAsync(doc, new PartitionKey(doc.ContextId));
-
-    log.LogInformation("Context upserted: {ContextId}", doc.ContextId);
-    return Results.Ok(new { status = "upserted", contextId = doc.ContextId });
-});
-
-app.MapGet("/api/manage/questionnaires", async (Database cosmosDb) =>
-{
-    var container = cosmosDb.GetContainer("questionnaires");
-    var query = new QueryDefinition("SELECT * FROM c ORDER BY c.uploadedAt DESC");
-    var items = new List<ParsedQuestionnaire>();
-    using var it = container.GetItemQueryIterator<ParsedQuestionnaire>(query);
-    while (it.HasMoreResults) items.AddRange(await it.ReadNextAsync());
-    return Results.Ok(items);
-});
-
-app.MapPost("/api/manage/questionnaire", async (
-    HttpRequest req,
-    Database cosmosDb,
-    ILogger<Program> log) =>
-{
-    var questionnaire = await JsonSerializer.DeserializeAsync<ParsedQuestionnaire>(req.Body, jsonOpts);
-    if (questionnaire is null || string.IsNullOrEmpty(questionnaire.QuestionnaireId))
-        return Results.BadRequest(new { error = "Invalid questionnaire: questionnaireId is required" });
-
-    var container = cosmosDb.GetContainer("questionnaires");
-    var doc = questionnaire with { Id = questionnaire.QuestionnaireId };
-    await container.UpsertItemAsync(doc, new PartitionKey(doc.QuestionnaireId));
-
-    log.LogInformation("Questionnaire upserted: {QuestionnaireId} ({Title})",
-        doc.QuestionnaireId, doc.Title);
-    return Results.Ok(new
+    app.MapPost("/api/manage/context", async (
+        HttpRequest req,
+        Database cosmosDb,
+        ILogger<Program> log) =>
     {
-        status = "upserted",
-        questionnaireId = doc.QuestionnaireId,
-        sections = doc.Sections.Count,
-        questions = doc.Questions.Count
+        var context = await JsonSerializer.DeserializeAsync<DiscoveryContext>(req.Body, jsonOpts);
+        if (context is null || string.IsNullOrEmpty(context.ContextId))
+            return Results.BadRequest(new { error = "Invalid context: contextId is required" });
+
+        var container = cosmosDb.GetContainer("discovery-sessions");
+        var doc = context with { Id = context.ContextId };
+        await container.UpsertItemAsync(doc, new PartitionKey(doc.ContextId));
+
+        log.LogInformation("Context upserted: {ContextId}", doc.ContextId);
+        return Results.Ok(new { status = "upserted", contextId = doc.ContextId });
     });
-});
+
+    app.MapGet("/api/manage/questionnaires", async (Database cosmosDb) =>
+    {
+        var container = cosmosDb.GetContainer("questionnaires");
+        var query = new QueryDefinition("SELECT * FROM c ORDER BY c.uploadedAt DESC");
+        var items = new List<ParsedQuestionnaire>();
+        using var it = container.GetItemQueryIterator<ParsedQuestionnaire>(query);
+        while (it.HasMoreResults) items.AddRange(await it.ReadNextAsync());
+        return Results.Ok(items);
+    });
+
+    app.MapPost("/api/manage/questionnaire", async (
+        HttpRequest req,
+        Database cosmosDb,
+        ILogger<Program> log) =>
+    {
+        var questionnaire = await JsonSerializer.DeserializeAsync<ParsedQuestionnaire>(req.Body, jsonOpts);
+        if (questionnaire is null || string.IsNullOrEmpty(questionnaire.QuestionnaireId))
+            return Results.BadRequest(new { error = "Invalid questionnaire: questionnaireId is required" });
+
+        var container = cosmosDb.GetContainer("questionnaires");
+        var doc = questionnaire with { Id = questionnaire.QuestionnaireId };
+        await container.UpsertItemAsync(doc, new PartitionKey(doc.QuestionnaireId));
+
+        log.LogInformation("Questionnaire upserted: {QuestionnaireId} ({Title})",
+            doc.QuestionnaireId, doc.Title);
+        return Results.Ok(new
+        {
+            status = "upserted",
+            questionnaireId = doc.QuestionnaireId,
+            sections = doc.Sections.Count,
+            questions = doc.Questions.Count
+        });
+    });
+}
 
 // =====================================================================
-// Document Upload APIs
+// Document Upload APIs (requires Blob Storage — standard/full mode only)
 // =====================================================================
+
+if (!settings.IsLightweight)
+{
 
 var allowedContentTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
 {
@@ -414,6 +443,8 @@ app.MapGet("/api/documents/{documentId}/content", async (
         return Results.Json(new { error = "Failed to retrieve document" }, statusCode: 500);
     }
 });
+
+} // end if (!settings.IsLightweight) — document upload routes
 
 // ── Fallback: serve index.html for SPA-style routing ────────────
 app.MapFallbackToFile("index.html");

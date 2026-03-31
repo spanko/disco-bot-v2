@@ -31,6 +31,10 @@ param deployerObjectId string
 @allowed(['Session', 'BoundedStaleness', 'Strong', 'ConsistentPrefix', 'Eventual'])
 param cosmosConsistency string = 'Session'
 
+@description('Conversation mode: lightweight (no Cosmos/Search/Blob), standard, or full')
+@allowed(['lightweight', 'standard', 'full'])
+param conversationMode string = 'standard'
+
 @description('Container image tag (default: latest). Set to empty string for initial deploy with placeholder image.')
 param imageTag string = ''
 
@@ -149,6 +153,7 @@ module containerApp 'modules/container-app.bicep' = {
     aiSearchEndpoint: aiSearch.outputs.searchEndpoint
     knowledgeIndexName: 'knowledge-items'
     appInsightsConnectionString: appInsights.outputs.connectionString
+    conversationMode: conversationMode
   }
 }
 

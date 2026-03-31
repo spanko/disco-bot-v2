@@ -23,6 +23,9 @@ public class DiscoveryBotSettings
     public string AiSearchEndpoint { get; set; } = "";
     public string KnowledgeIndexName { get; set; } = "knowledge-items";
 
+    // Conversation mode: lightweight | standard | full
+    public string ConversationMode { get; set; } = "standard";
+
     // Agent configuration
     public string InstructionsPath { get; set; } = "config/instructions.md";
 
@@ -37,6 +40,7 @@ public class DiscoveryBotSettings
         ProjectEndpoint = Env("PROJECT_ENDPOINT"),
         AgentName = Env("AGENT_NAME", "discovery-agent"),
         ModelDeploymentName = Env("MODEL_DEPLOYMENT_NAME", "gpt-4o"),
+        ConversationMode = Env("CONVERSATION_MODE", "standard"),
         CosmosEndpoint = Env("COSMOS_ENDPOINT"),
         CosmosDatabase = Env("COSMOS_DATABASE", "discovery"),
         StorageEndpoint = Env("STORAGE_ENDPOINT"),
@@ -50,17 +54,23 @@ public class DiscoveryBotSettings
     /// Validates that all required environment variables are set.
     /// Call after FromEnvironment() to fail fast with a clear message.
     /// </summary>
+    public bool IsLightweight => ConversationMode.Equals("lightweight", StringComparison.OrdinalIgnoreCase);
+
     public void Validate()
     {
         var missing = new List<string>();
         if (string.IsNullOrEmpty(ProjectEndpoint)) missing.Add("PROJECT_ENDPOINT");
-        if (string.IsNullOrEmpty(CosmosEndpoint)) missing.Add("COSMOS_ENDPOINT");
-        if (string.IsNullOrEmpty(StorageEndpoint)) missing.Add("STORAGE_ENDPOINT");
-        if (string.IsNullOrEmpty(AiSearchEndpoint)) missing.Add("AI_SEARCH_ENDPOINT");
+
+        if (!IsLightweight)
+        {
+            if (string.IsNullOrEmpty(CosmosEndpoint)) missing.Add("COSMOS_ENDPOINT");
+            if (string.IsNullOrEmpty(StorageEndpoint)) missing.Add("STORAGE_ENDPOINT");
+            if (string.IsNullOrEmpty(AiSearchEndpoint)) missing.Add("AI_SEARCH_ENDPOINT");
+        }
 
         if (missing.Count > 0)
             throw new InvalidOperationException(
-                $"Missing required environment variables: {string.Join(", ", missing)}");
+                $"Missing required environment variables for '{ConversationMode}' mode: {string.Join(", ", missing)}");
     }
 
     private static string Env(string key, string fallback = "")

@@ -16,6 +16,10 @@ param aiSearchEndpoint string
 param knowledgeIndexName string
 param appInsightsConnectionString string
 
+@description('Conversation mode: lightweight (no Cosmos/Search/Blob), standard, or full')
+@allowed(['lightweight', 'standard', 'full'])
+param conversationMode string = 'standard'
+
 resource env 'Microsoft.App/managedEnvironments@2024-03-01' = {
   name: containerAppEnvName
   location: location
@@ -63,6 +67,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'AI_SEARCH_ENDPOINT', value: aiSearchEndpoint }
             { name: 'KNOWLEDGE_INDEX_NAME', value: knowledgeIndexName }
             { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsightsConnectionString }
+            { name: 'CONVERSATION_MODE', value: conversationMode }
             { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
           ]
           probes: [
