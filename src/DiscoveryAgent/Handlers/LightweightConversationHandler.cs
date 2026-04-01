@@ -77,7 +77,12 @@ public class LightweightConversationHandler : IConversationHandler
         var history = _histories.GetOrAdd(conversationId, _ => []);
 
         // ─────────────────────────────────────────────────────────────
-        // Step 2: Build input with history + new message
+        // Step 2: Ensure agent exists (lazy init in lightweight mode)
+        // ─────────────────────────────────────────────────────────────
+        await _agentManager.EnsureAgentExistsAsync(ct);
+
+        // ─────────────────────────────────────────────────────────────
+        // Step 3: Build input with history + new message
         // ─────────────────────────────────────────────────────────────
         var responseClient = _projectClient.OpenAI.GetProjectResponsesClientForAgent(
             defaultAgent: _agentManager.AgentName);

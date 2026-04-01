@@ -31,8 +31,6 @@ builder.Services.AddSingleton(sp =>
 {
     var client = sp.GetRequiredService<CosmosClient>();
     var db = client.GetDatabase(cosmosDatabase);
-    // Ensure stamps container exists
-    db.CreateContainerIfNotExistsAsync("stamps", "/stampId").GetAwaiter().GetResult();
     return db.GetContainer("stamps");
 });
 

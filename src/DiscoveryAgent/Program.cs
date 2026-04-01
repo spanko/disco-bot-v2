@@ -148,7 +148,10 @@ app.MapGet("/health/ready", async (
 {
     var checks = new Dictionary<string, string>();
 
-    checks["agent"] = agentManager.IsInitialized ? "ok" : "not_initialized";
+    // In lightweight mode, agent init happens lazily on first request — don't gate readiness on it
+    checks["agent"] = agentManager.IsInitialized ? "ok"
+        : settings.IsLightweight ? "lazy_init"
+        : "not_initialized";
     checks["mode"] = settings.ConversationMode;
 
     var cosmosClient = sp.GetService<CosmosClient>();
@@ -172,7 +175,7 @@ app.MapGet("/health/ready", async (
         catch { checks["storage"] = "failed"; }
     }
 
-    var allHealthy = checks.Values.All(v => v is "ok" or "lightweight" or "standard" or "full");
+    var allHealthy = checks.Values.All(v => v is "ok" or "lazy_init" or "lightweight" or "standard" or "full");
     return allHealthy
         ? Results.Ok(new { status = "healthy", checks, timestamp = DateTime.UtcNow })
         : Results.Json(new { status = "degraded", checks, timestamp = DateTime.UtcNow }, statusCode: 503);
@@ -298,7 +301,8 @@ app.MapPost("/api/conversation", async (
     catch (Exception ex)
     {
         log.LogError(ex, "Conversation failed");
-        return Results.Json(new { error = "Internal error" }, statusCode: 500);
+        var isDev = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development";
+        return Results.Json(new { error = isDev ? $"{ex.GetType().Name}: {ex.Message}" : "Internal error" }, statusCode: 500);
     }
 });
 
