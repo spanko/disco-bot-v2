@@ -15,12 +15,14 @@ public class StampManager
     private readonly ArmClient _armClient;
     private readonly Container _stampsContainer;
     private readonly ILogger<StampManager> _logger;
+    private readonly string _templateSpecId;
 
     public StampManager(ArmClient armClient, Container stampsContainer, ILogger<StampManager> logger)
     {
         _armClient = armClient;
         _stampsContainer = stampsContainer;
         _logger = logger;
+        _templateSpecId = Environment.GetEnvironmentVariable("STAMP_TEMPLATE_SPEC_ID") ?? "";
     }
 
     /// <summary>
@@ -98,14 +100,15 @@ public class StampManager
 
             _logger.LogInformation("Resource group created: {ResourceGroup}", resourceGroupName);
 
-            // Deploy main.bicep via ARM deployment
+            // Deploy via Template Spec (compiled ARM JSON published to Azure)
+            if (string.IsNullOrEmpty(_templateSpecId))
+                throw new InvalidOperationException("STAMP_TEMPLATE_SPEC_ID env var is required for stamp provisioning");
+
             var deploymentContent = new ArmDeploymentContent(new ArmDeploymentProperties(ArmDeploymentMode.Incremental)
             {
                 TemplateLink = new ArmDeploymentTemplateLink
                 {
-                    // In production, this would reference a template spec or a published template URI
-                    // For now, log the intent — actual deployment requires the template to be accessible
-                    Uri = new Uri("https://raw.githubusercontent.com/spanko/disco-bot-v2/main/infra/main.bicep"),
+                    Id = _templateSpecId,
                 },
                 Parameters = BinaryData.FromObjectAsJson(new
                 {

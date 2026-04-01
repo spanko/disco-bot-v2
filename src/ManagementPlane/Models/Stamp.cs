@@ -68,6 +68,22 @@ public record FleetHealth(
 );
 
 /// <summary>
+/// Partial update request for an existing stamp.
+/// Only non-null fields are applied.
+/// </summary>
+public record UpdateStampRequest(
+    string? Name = null,
+    string? Description = null,
+    string? ContainerAppFqdn = null,
+    string? AcrName = null,
+    string? ContainerAppName = null,
+    StampStatus? Status = null,
+    ConversationMode? ConversationMode = null,
+    AuthMode? AuthMode = null,
+    string? LastError = null
+);
+
+/// <summary>
 /// Cost data for a stamp.
 /// </summary>
 public record StampCost(

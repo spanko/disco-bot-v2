@@ -82,6 +82,31 @@ app.MapPost("/api/fleet/stamps", async (HttpRequest req, StampManager manager) =
     return Results.Ok(stamp);
 });
 
+app.MapPatch("/api/fleet/stamps/{stampId}", async (string stampId, HttpRequest req, StampManager manager) =>
+{
+    var stamp = await manager.GetStampAsync(stampId);
+    if (stamp is null) return Results.NotFound();
+
+    var update = await req.ReadFromJsonAsync<UpdateStampRequest>(jsonOpts);
+    if (update is null) return Results.BadRequest(new { error = "Request body required" });
+
+    var updated = stamp with
+    {
+        Name = update.Name ?? stamp.Name,
+        Description = update.Description ?? stamp.Description,
+        ContainerAppFqdn = update.ContainerAppFqdn ?? stamp.ContainerAppFqdn,
+        AcrName = update.AcrName ?? stamp.AcrName,
+        ContainerAppName = update.ContainerAppName ?? stamp.ContainerAppName,
+        Status = update.Status ?? stamp.Status,
+        ConversationMode = update.ConversationMode ?? stamp.ConversationMode,
+        AuthMode = update.AuthMode ?? stamp.AuthMode,
+        LastError = update.LastError ?? stamp.LastError,
+    };
+
+    await manager.UpdateStampAsync(updated);
+    return Results.Ok(updated);
+});
+
 app.MapPost("/api/fleet/stamps/{stampId}/pause", async (string stampId, StampManager manager) =>
 {
     try
