@@ -16,6 +16,7 @@ public class StampManager
     private readonly Container _stampsContainer;
     private readonly ILogger<StampManager> _logger;
     private readonly string _templateSpecId;
+    private readonly string _deployerObjectId;
 
     public StampManager(ArmClient armClient, Container stampsContainer, ILogger<StampManager> logger)
     {
@@ -23,6 +24,7 @@ public class StampManager
         _stampsContainer = stampsContainer;
         _logger = logger;
         _templateSpecId = Environment.GetEnvironmentVariable("STAMP_TEMPLATE_SPEC_ID") ?? "";
+        _deployerObjectId = Environment.GetEnvironmentVariable("DEPLOYER_OBJECT_ID") ?? "";
     }
 
     /// <summary>
@@ -115,8 +117,10 @@ public class StampManager
                     prefix = new { value = request.Prefix },
                     suffix = new { value = request.Suffix },
                     location = new { value = request.Location },
+                    deployerObjectId = new { value = _deployerObjectId },
                     conversationMode = new { value = request.ConversationMode.ToString().ToLowerInvariant() },
                     authMode = new { value = request.AuthMode.ToString().ToLowerInvariant() },
+                    enableObservability = new { value = false },
                     tags = new
                     {
                         value = new Dictionary<string, string>
