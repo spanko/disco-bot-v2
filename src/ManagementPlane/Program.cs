@@ -49,6 +49,9 @@ var jsonOpts = new JsonSerializerOptions
     PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
 };
 
+// ── Static files (dashboard UI from wwwroot/) ──────────────────
+app.UseStaticFiles();
+
 // =====================================================================
 // Health
 // =====================================================================
@@ -138,5 +141,8 @@ app.MapGet("/api/fleet/health", async (FleetMonitor monitor) =>
     var health = await monitor.GetFleetHealthAsync();
     return Results.Ok(health);
 });
+
+// ── Fallback: serve index.html for SPA-style routing ────────────
+app.MapFallbackToFile("index.html");
 
 app.Run();

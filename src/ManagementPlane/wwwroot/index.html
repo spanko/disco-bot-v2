@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Discovery Bot - Fleet Management</title>
+<style>
+  :root {
+    --bg: #f8f9fc;
+    --surface: #ffffff;
+    --border: #e8ecf1;
+    --text: #1a2138;
+    --text-secondary: #6b7a99;
+    --accent: #4f6ef7;
+    --accent-light: #eef1fe;
+    --green: #10b981;
+    --green-light: #ecfdf5;
+    --amber: #f59e0b;
+    --amber-light: #fffbeb;
+    --red: #ef4444;
+    --red-light: #fef2f2;
+    --purple: #8b5cf6;
+    --purple-light: #f5f3ff;
+    --radius: 12px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06);
+    --shadow-lg: 0 4px 12px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.08);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  /* ── Top bar ─────────────────────────────────────────── */
+  .topbar {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 32px;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    backdrop-filter: blur(12px);
+  }
+  .topbar .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+    font-size: 16px;
+    color: var(--text);
+    letter-spacing: -0.3px;
+  }
+  .topbar .logo .icon {
+    width: 32px; height: 32px;
+    background: linear-gradient(135deg, var(--accent), #7c3aed);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 16px;
+  }
+  .topbar .spacer { flex: 1; }
+  .topbar .user {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; color: var(--text-secondary);
+  }
+  .topbar .user .avatar {
+    width: 28px; height: 28px;
+    background: var(--accent-light);
+    color: var(--accent);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 600;
+  }
+  .refresh-btn {
+    background: none; border: 1px solid var(--border); border-radius: 8px;
+    padding: 6px 14px; font-size: 13px; color: var(--text-secondary);
+    cursor: pointer; transition: all 0.15s;
+  }
+  .refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── Layout ──────────────────────────────────────────── */
+  .container { max-width: 1280px; margin: 0 auto; padding: 28px 32px; }
+
+  /* ── Summary Cards ───────────────────────────────────── */
+  .summary-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+  .summary-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    box-shadow: var(--shadow);
+    position: relative;
+    overflow: hidden;
+  }
+  .summary-card .label {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+  }
+  .summary-card .value {
+    font-size: 36px;
+    font-weight: 800;
+    letter-spacing: -1px;
+    line-height: 1;
+  }
+  .summary-card .sub {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 6px;
+  }
+  .summary-card .accent-bar {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+  }
+  .summary-card.total .accent-bar { background: var(--accent); }
+  .summary-card.total .value { color: var(--accent); }
+  .summary-card.active .accent-bar { background: var(--green); }
+  .summary-card.active .value { color: var(--green); }
+  .summary-card.paused .accent-bar { background: var(--amber); }
+  .summary-card.paused .value { color: var(--amber); }
+  .summary-card.degraded .accent-bar { background: var(--red); }
+  .summary-card.degraded .value { color: var(--red); }
+
+  /* ── Section ─────────────────────────────────────────── */
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  .section-header h2 {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+  }
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 18px;
+    font-size: 13px; font-weight: 600;
+    border: none; border-radius: 8px;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+    box-shadow: 0 1px 3px rgba(79,110,247,0.3);
+  }
+  .btn-primary:hover { background: #3b5de7; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(79,110,247,0.3); }
+  .btn-secondary {
+    background: var(--surface);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+  }
+  .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-danger { background: var(--red-light); color: var(--red); }
+  .btn-danger:hover { background: var(--red); color: #fff; }
+  .btn-success { background: var(--green-light); color: var(--green); }
+  .btn-success:hover { background: var(--green); color: #fff; }
+
+  /* ── Stamps Table ────────────────────────────────────── */
+  .table-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  table { width: 100%; border-collapse: collapse; }
+  thead { background: #fafbfd; }
+  th {
+    text-align: left; padding: 12px 20px;
+    font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.8px;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border);
+  }
+  td {
+    padding: 16px 20px;
+    font-size: 14px;
+    border-bottom: 1px solid #f3f4f8;
+    vertical-align: middle;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #fafbfd; }
+
+  .stamp-name {
+    font-weight: 600;
+    color: var(--text);
+  }
+  .stamp-id {
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+  .stamp-desc {
+    font-size: 13px;
+    color: var(--text-secondary);
+    max-width: 220px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ── Badges ──────────────────────────────────────────── */
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 12px; font-weight: 600;
+    letter-spacing: 0.2px;
+  }
+  .badge .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+  }
+  .badge-active { background: var(--green-light); color: #059669; }
+  .badge-active .dot { background: var(--green); }
+  .badge-paused { background: var(--amber-light); color: #d97706; }
+  .badge-paused .dot { background: var(--amber); }
+  .badge-failed { background: var(--red-light); color: #dc2626; }
+  .badge-failed .dot { background: var(--red); }
+  .badge-provisioning { background: var(--purple-light); color: #7c3aed; }
+  .badge-provisioning .dot { background: var(--purple); }
+
+  .mode-tag {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 11px; font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: #f3f4f8;
+    color: var(--text-secondary);
+  }
+
+  .health-indicator {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 13px;
+  }
+  .health-indicator .pulse {
+    width: 8px; height: 8px; border-radius: 50%;
+  }
+  .health-indicator .pulse.healthy { background: var(--green); box-shadow: 0 0 0 3px rgba(16,185,129,0.15); }
+  .health-indicator .pulse.degraded { background: var(--amber); box-shadow: 0 0 0 3px rgba(245,158,11,0.15); }
+  .health-indicator .pulse.unreachable { background: var(--red); box-shadow: 0 0 0 3px rgba(239,68,68,0.15); }
+  .health-indicator .pulse.unknown { background: #cbd5e1; }
+
+  .actions { display: flex; gap: 6px; }
+  .actions button {
+    padding: 5px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    font-size: 12px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    transition: all 0.15s;
+  }
+  .actions button:hover { border-color: var(--accent); color: var(--accent); }
+
+  .fqdn-link {
+    font-size: 12px;
+    color: var(--accent);
+    text-decoration: none;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+  .fqdn-link:hover { text-decoration: underline; }
+
+  /* ── Empty state ─────────────────────────────────────── */
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-secondary);
+  }
+  .empty-state .icon { font-size: 48px; margin-bottom: 16px; opacity: 0.4; }
+  .empty-state h3 { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+  .empty-state p { font-size: 14px; max-width: 360px; margin: 0 auto; }
+
+  /* ── Modal ───────────────────────────────────────────── */
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.4);
+    backdrop-filter: blur(4px);
+    display: none; align-items: center; justify-content: center;
+    z-index: 200;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--surface);
+    border-radius: 16px;
+    box-shadow: var(--shadow-lg);
+    width: 480px;
+    max-height: 85vh;
+    overflow-y: auto;
+  }
+  .modal-header {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .modal-header h3 { font-size: 16px; font-weight: 700; }
+  .modal-close {
+    background: none; border: none;
+    font-size: 20px; color: var(--text-secondary);
+    cursor: pointer; padding: 4px;
+  }
+  .modal-body { padding: 24px; }
+  .modal-footer {
+    padding: 16px 24px;
+    border-top: 1px solid var(--border);
+    display: flex; gap: 8px; justify-content: flex-end;
+  }
+
+  .form-group { margin-bottom: 16px; }
+  .form-group label {
+    display: block;
+    font-size: 12px; font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+  }
+  .form-group input, .form-group select {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 14px;
+    color: var(--text);
+    background: var(--surface);
+    transition: border-color 0.15s;
+  }
+  .form-group input:focus, .form-group select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(79,110,247,0.1);
+  }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  /* ── Toast ───────────────────────────────────────────── */
+  .toast {
+    position: fixed; bottom: 24px; right: 24px;
+    padding: 12px 20px;
+    border-radius: 10px;
+    font-size: 13px; font-weight: 500;
+    box-shadow: var(--shadow-lg);
+    transform: translateY(80px);
+    opacity: 0;
+    transition: all 0.3s ease;
+    z-index: 300;
+  }
+  .toast.show { transform: translateY(0); opacity: 1; }
+  .toast.success { background: var(--green); color: #fff; }
+  .toast.error { background: var(--red); color: #fff; }
+
+  /* ── Responsive ──────────────────────────────────────── */
+  @media (max-width: 900px) {
+    .summary-row { grid-template-columns: repeat(2, 1fr); }
+    .container { padding: 20px 16px; }
+    .topbar { padding: 0 16px; }
+  }
+  @media (max-width: 600px) {
+    .summary-row { grid-template-columns: 1fr; }
+  }
+
+  /* ── Animations ──────────────────────────────────────── */
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  .fade-in { animation: fadeIn 0.3s ease; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+  .loading { animation: pulse 1.5s ease infinite; }
+</style>
+</head>
+<body>
+
+<!-- ── Top Bar ──────────────────────────────────────── -->
+<div class="topbar">
+  <div class="logo">
+    <div class="icon">D</div>
+    <span>Fleet Management</span>
+  </div>
+  <div class="spacer"></div>
+  <button class="refresh-btn" onclick="refreshAll()">Refresh</button>
+  <div class="user">
+    <div class="avatar" id="userAvatar">?</div>
+    <span id="userName">Loading...</span>
+  </div>
+</div>
+
+<!-- ── Main Content ────────────────────────────────── -->
+<div class="container">
+
+  <!-- Summary Cards -->
+  <div class="summary-row fade-in" id="summaryCards">
+    <div class="summary-card total">
+      <div class="accent-bar"></div>
+      <div class="label">Total Stamps</div>
+      <div class="value" id="totalStamps">--</div>
+      <div class="sub">Across all environments</div>
+    </div>
+    <div class="summary-card active">
+      <div class="accent-bar"></div>
+      <div class="label">Active</div>
+      <div class="value" id="activeStamps">--</div>
+      <div class="sub">Healthy and serving traffic</div>
+    </div>
+    <div class="summary-card paused">
+      <div class="accent-bar"></div>
+      <div class="label">Paused</div>
+      <div class="value" id="pausedStamps">--</div>
+      <div class="sub">Scaled to zero</div>
+    </div>
+    <div class="summary-card degraded">
+      <div class="accent-bar"></div>
+      <div class="label">Degraded</div>
+      <div class="value" id="degradedStamps">--</div>
+      <div class="sub">Unreachable or unhealthy</div>
+    </div>
+  </div>
+
+  <!-- Stamps Table -->
+  <div class="section-header">
+    <h2>Stamps</h2>
+    <button class="btn btn-primary" onclick="openModal()">+ New Stamp</button>
+  </div>
+
+  <div class="table-card fade-in" id="stampsTable">
+    <table>
+      <thead>
+        <tr>
+          <th>Stamp</th>
+          <th>Status</th>
+          <th>Mode</th>
+          <th>Auth</th>
+          <th>Health</th>
+          <th>Endpoint</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="stampsBody">
+        <tr><td colspan="7" class="loading" style="text-align:center;padding:40px;color:var(--text-secondary)">Loading stamps...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<!-- ── New Stamp Modal ─────────────────────────────── -->
+<div class="modal-overlay" id="newStampModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Provision New Stamp</h3>
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Client Name</label>
+        <input type="text" id="stampName" placeholder="e.g. Acme Corp">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Prefix</label>
+          <input type="text" id="stampPrefix" placeholder="e.g. acme">
+        </div>
+        <div class="form-group">
+          <label>Suffix</label>
+          <input type="text" id="stampSuffix" placeholder="e.g. prod">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Description</label>
+        <input type="text" id="stampDesc" placeholder="Optional description">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Location</label>
+          <select id="stampLocation">
+            <option value="eastus2">East US 2</option>
+            <option value="eastus">East US</option>
+            <option value="westus2">West US 2</option>
+            <option value="westeurope">West Europe</option>
+            <option value="northeurope">North Europe</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Conversation Mode</label>
+          <select id="stampMode">
+            <option value="Lightweight">Lightweight</option>
+            <option value="Standard" selected>Standard</option>
+            <option value="Full">Full</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Auth Mode</label>
+        <select id="stampAuth">
+          <option value="None">None</option>
+          <option value="MagicLink">Magic Link</option>
+          <option value="InviteCode">Invite Code</option>
+          <option value="EntraExternal">Entra External</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="provisionStamp()">Provision</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Toast ────────────────────────────────────────── -->
+<div class="toast" id="toast"></div>
+
+<script>
+const API = '';
+
+// ── Data fetching ───────────────────────────────────
+async function fetchJSON(url, opts) {
+  const res = await fetch(API + url, opts);
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+async function loadHealth() {
+  try {
+    const h = await fetchJSON('/api/fleet/health');
+    document.getElementById('totalStamps').textContent = h.totalStamps;
+    document.getElementById('activeStamps').textContent = h.activeStamps;
+    document.getElementById('pausedStamps').textContent = h.pausedStamps;
+    document.getElementById('degradedStamps').textContent = h.degradedStamps;
+  } catch (e) {
+    console.error('Health fetch failed:', e);
+  }
+}
+
+async function loadStamps() {
+  try {
+    const stamps = await fetchJSON('/api/fleet/stamps');
+    renderStamps(stamps);
+  } catch (e) {
+    console.error('Stamps fetch failed:', e);
+    document.getElementById('stampsBody').innerHTML =
+      `<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--red)">Failed to load stamps. Are you authenticated?</td></tr>`;
+  }
+}
+
+function renderStamps(stamps) {
+  const tbody = document.getElementById('stampsBody');
+
+  if (!stamps.length) {
+    tbody.innerHTML = `
+      <tr><td colspan="7">
+        <div class="empty-state">
+          <div class="icon">&#x2601;</div>
+          <h3>No stamps yet</h3>
+          <p>Provision your first Discovery Bot stamp to get started.</p>
+        </div>
+      </td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = stamps.map(s => {
+    const statusClass = (s.status || '').toLowerCase();
+    const healthClass = s.healthStatus || 'unknown';
+    const fqdn = s.containerAppFqdn;
+    const lastCheck = s.lastHealthCheck
+      ? new Date(s.lastHealthCheck).toLocaleString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })
+      : 'Never';
+
+    return `<tr>
+      <td>
+        <div class="stamp-name">${esc(s.name)}</div>
+        <div class="stamp-id">${esc(s.stampId)}</div>
+      </td>
+      <td>
+        <span class="badge badge-${statusClass}">
+          <span class="dot"></span>
+          ${esc(s.status)}
+        </span>
+      </td>
+      <td><span class="mode-tag">${esc(s.conversationMode)}</span></td>
+      <td><span class="mode-tag">${esc(s.authMode)}</span></td>
+      <td>
+        <div class="health-indicator">
+          <span class="pulse ${healthClass}"></span>
+          <span>${healthClass === 'unknown' ? 'No data' : esc(healthClass)}</span>
+        </div>
+        <div style="font-size:11px;color:var(--text-secondary);margin-top:2px">${lastCheck}</div>
+      </td>
+      <td>
+        ${fqdn
+          ? `<a class="fqdn-link" href="https://${esc(fqdn)}" target="_blank">${esc(fqdn.split('.')[0])}</a>`
+          : '<span style="color:var(--text-secondary);font-size:13px">Not deployed</span>'
+        }
+      </td>
+      <td>
+        <div class="actions">
+          ${s.status === 'Active'
+            ? `<button onclick="pauseStamp('${esc(s.stampId)}')" title="Pause">Pause</button>`
+            : s.status === 'Paused'
+              ? `<button onclick="resumeStamp('${esc(s.stampId)}')" title="Resume">Resume</button>`
+              : ''
+          }
+          ${fqdn ? `<button onclick="window.open('https://${esc(fqdn)}','_blank')" title="Open">Open</button>` : ''}
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Actions ─────────────────────────────────────────
+async function pauseStamp(id) {
+  try {
+    await fetchJSON(`/api/fleet/stamps/${id}/pause`, { method: 'POST' });
+    showToast('Stamp paused', 'success');
+    refreshAll();
+  } catch (e) { showToast('Failed to pause: ' + e.message, 'error'); }
+}
+
+async function resumeStamp(id) {
+  try {
+    await fetchJSON(`/api/fleet/stamps/${id}/resume`, { method: 'POST' });
+    showToast('Stamp resumed', 'success');
+    refreshAll();
+  } catch (e) { showToast('Failed to resume: ' + e.message, 'error'); }
+}
+
+async function provisionStamp() {
+  const body = {
+    name: document.getElementById('stampName').value,
+    prefix: document.getElementById('stampPrefix').value,
+    suffix: document.getElementById('stampSuffix').value || undefined,
+    description: document.getElementById('stampDesc').value || undefined,
+    location: document.getElementById('stampLocation').value,
+    conversationMode: document.getElementById('stampMode').value,
+    authMode: document.getElementById('stampAuth').value,
+  };
+
+  if (!body.name || !body.prefix) {
+    showToast('Name and prefix are required', 'error');
+    return;
+  }
+
+  try {
+    await fetchJSON('/api/fleet/stamps', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    showToast('Stamp provisioning started', 'success');
+    closeModal();
+    refreshAll();
+  } catch (e) { showToast('Provisioning failed: ' + e.message, 'error'); }
+}
+
+// ── Modal ───────────────────────────────────────────
+function openModal() {
+  document.getElementById('newStampModal').classList.add('open');
+  document.getElementById('stampName').focus();
+}
+function closeModal() {
+  document.getElementById('newStampModal').classList.remove('open');
+  ['stampName','stampPrefix','stampSuffix','stampDesc'].forEach(
+    id => document.getElementById(id).value = '');
+}
+
+// ── Toast ───────────────────────────────────────────
+function showToast(msg, type = 'success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `toast ${type} show`;
+  setTimeout(() => t.classList.remove('show'), 3500);
+}
+
+// ── Helpers ─────────────────────────────────────────
+function esc(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function refreshAll() {
+  loadHealth();
+  loadStamps();
+}
+
+// ── User info ───────────────────────────────────────
+async function loadUser() {
+  try {
+    const res = await fetch('/.auth/me');
+    if (res.ok) {
+      const data = await res.json();
+      const claims = data[0]?.user_claims || [];
+      const name = claims.find(c => c.typ === 'name')?.val
+        || claims.find(c => c.typ === 'preferred_username')?.val
+        || 'Operator';
+      document.getElementById('userName').textContent = name;
+      document.getElementById('userAvatar').textContent = name[0].toUpperCase();
+    }
+  } catch {}
+}
+
+// ── Init ────────────────────────────────────────────
+loadUser();
+refreshAll();
+setInterval(refreshAll, 30000);
+</script>
+</body>
+</html>
