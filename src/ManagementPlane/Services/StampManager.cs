@@ -118,8 +118,8 @@ public class StampManager
                     suffix = new { value = request.Suffix },
                     location = new { value = request.Location },
                     deployerObjectId = new { value = _deployerObjectId },
-                    conversationMode = new { value = request.ConversationMode.ToString().ToLowerInvariant() },
-                    authMode = new { value = request.AuthMode.ToString().ToLowerInvariant() },
+                    conversationMode = new { value = ToBicepValue(request.ConversationMode) },
+                    authMode = new { value = ToBicepValue(request.AuthMode) },
                     enableObservability = new { value = false },
                     tags = new
                     {
@@ -198,4 +198,21 @@ public class StampManager
         await _stampsContainer.UpsertItemAsync(stamp, new PartitionKey(stampId));
         return stamp;
     }
+
+    private static string ToBicepValue(ConversationMode mode) => mode switch
+    {
+        ConversationMode.Lightweight => "lightweight",
+        ConversationMode.Standard => "standard",
+        ConversationMode.Full => "full",
+        _ => "standard",
+    };
+
+    private static string ToBicepValue(AuthMode mode) => mode switch
+    {
+        AuthMode.None => "none",
+        AuthMode.MagicLink => "magic_link",
+        AuthMode.InviteCode => "invite_code",
+        AuthMode.EntraExternal => "entra_external",
+        _ => "none",
+    };
 }
