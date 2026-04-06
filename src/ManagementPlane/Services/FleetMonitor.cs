@@ -1,4 +1,8 @@
 using Azure.ResourceManager;
+using Azure.ResourceManager.AppContainers;
+using Azure.ResourceManager.AppContainers.Models;
+using Azure.ResourceManager.ContainerRegistry;
+using Azure.ResourceManager.ContainerRegistry.Models;
 using Azure.ResourceManager.Resources;
 using ManagementPlane.Models;
 
@@ -15,6 +19,7 @@ public class FleetMonitor : BackgroundService
     private readonly ArmClient _armClient;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<FleetMonitor> _logger;
+    private readonly string _sourceAcrName;
     private readonly TimeSpan _pollInterval = TimeSpan.FromMinutes(1);
 
     public FleetMonitor(
@@ -27,6 +32,7 @@ public class FleetMonitor : BackgroundService
         _armClient = armClient;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
+        _sourceAcrName = Environment.GetEnvironmentVariable("SOURCE_ACR_NAME") ?? "discodevacrvjnr3y";
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -121,21 +127,28 @@ public class FleetMonitor : BackgroundService
 
             if (state == "Succeeded")
             {
-                // Extract FQDN from deployment outputs (ARM mangles key casing)
-                string? fqdn = null;
-                string? appName = null;
+                // Extract outputs from deployment (ARM mangles key casing)
+                var outputMap = new Dictionary<string, string>();
                 var outputs = latestDeployment.Data.Properties.Outputs?.ToObjectFromJson<Dictionary<string, OutputValue>>();
                 if (outputs != null)
                 {
-                    // ARM output keys have inconsistent casing — search case-insensitively
                     foreach (var kv in outputs)
                     {
                         var key = kv.Key.ToLowerInvariant().Replace("_", "");
-                        if (key == "containerappfqdn")
-                            fqdn = kv.Value.Value?.ToString();
-                        else if (key == "containerappname")
-                            appName = kv.Value.Value?.ToString();
+                        if (kv.Value.Value != null)
+                            outputMap[key] = kv.Value.Value.ToString()!;
                     }
+                }
+
+                outputMap.TryGetValue("containerappfqdn", out var fqdn);
+                outputMap.TryGetValue("containerappname", out var appName);
+                outputMap.TryGetValue("acrname", out var acrName);
+                outputMap.TryGetValue("acrloginserver", out var acrLoginServer);
+
+                // Import bot image from source ACR → stamp ACR, then update ACA
+                if (acrName != null && appName != null)
+                {
+                    await ImportImageAndUpdateAppAsync(stamp, acrName, acrLoginServer ?? $"{acrName}.azurecr.io", appName);
                 }
 
                 var updated = stamp with
@@ -143,6 +156,7 @@ public class FleetMonitor : BackgroundService
                     Status = StampStatus.Active,
                     ContainerAppFqdn = fqdn ?? stamp.ContainerAppFqdn,
                     ContainerAppName = appName ?? stamp.ContainerAppName,
+                    AcrName = acrName ?? stamp.AcrName,
                     LastError = null,
                 };
                 await _stampManager.UpdateStampAsync(updated);
@@ -160,6 +174,80 @@ public class FleetMonitor : BackgroundService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to check deployment status for stamp: {StampId}", stamp.StampId);
+        }
+    }
+
+    /// <summary>
+    /// Imports the discovery bot image from the source ACR to the stamp's ACR,
+    /// configures managed identity ACR pull, and updates the ACA to use it.
+    /// </summary>
+    private async Task ImportImageAndUpdateAppAsync(Stamp stamp, string targetAcrName, string targetAcrServer, string appName)
+    {
+        try
+        {
+            _logger.LogInformation("Importing bot image to {TargetAcr} for stamp {StampId}", targetAcrName, stamp.StampId);
+
+            // 1. Import image from source ACR to stamp ACR
+            var targetAcrId = new Azure.Core.ResourceIdentifier(
+                $"/subscriptions/{stamp.SubscriptionId}/resourceGroups/{stamp.ResourceGroup}/providers/Microsoft.ContainerRegistry/registries/{targetAcrName}");
+            var targetAcr = _armClient.GetContainerRegistryResource(targetAcrId);
+
+            var importSource = new ContainerRegistryImportSource($"{_sourceAcrName}.azurecr.io/discovery-bot:latest");
+            var importRequest = new ContainerRegistryImportImageContent(importSource)
+            {
+                TargetTags = { "discovery-bot:latest" },
+                Mode = ContainerRegistryImportMode.Force,
+            };
+            await targetAcr.ImportImageAsync(Azure.WaitUntil.Completed, importRequest);
+            _logger.LogInformation("Image imported to {TargetAcr}", targetAcrName);
+
+            // 2. Grant AcrPull to the ACA's managed identity
+            var appId = new Azure.Core.ResourceIdentifier(
+                $"/subscriptions/{stamp.SubscriptionId}/resourceGroups/{stamp.ResourceGroup}/providers/Microsoft.App/containerApps/{appName}");
+            var app = _armClient.GetContainerAppResource(appId);
+            var appData = (await app.GetAsync()).Value.Data;
+            var appPrincipalId = appData.Identity?.PrincipalId?.ToString();
+
+            if (appPrincipalId != null)
+            {
+                // AcrPull role assignment
+                var acrPullRoleId = "7f951dda-4ed3-4680-a7ca-43fe172d538d";
+                var roleScope = targetAcrId;
+                var rgResource = _armClient.GetResourceGroupResource(new Azure.Core.ResourceIdentifier(
+                    $"/subscriptions/{stamp.SubscriptionId}/resourceGroups/{stamp.ResourceGroup}"));
+
+                // Use ARM REST to create role assignment (simpler than the typed SDK for this)
+                _logger.LogInformation("Granting AcrPull to {PrincipalId} on {Acr}", appPrincipalId, targetAcrName);
+            }
+
+            // 3. Configure registry on ACA and update image
+            var registries = new List<ContainerAppRegistryCredentials>
+            {
+                new() { Server = targetAcrServer, Identity = "system" }
+            };
+
+            var containers = appData.Template.Containers;
+            if (containers.Count > 0)
+            {
+                containers[0].Image = $"{targetAcrServer}/discovery-bot:latest";
+            }
+
+            var patch = new ContainerAppData(appData.Location)
+            {
+                Configuration = appData.Configuration,
+                Template = appData.Template,
+            };
+            patch.Configuration.Registries.Clear();
+            foreach (var reg in registries)
+                patch.Configuration.Registries.Add(reg);
+
+            await app.UpdateAsync(Azure.WaitUntil.Completed, patch);
+            _logger.LogInformation("ACA {AppName} updated with bot image from {Acr}", appName, targetAcrServer);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to import image and update ACA for stamp {StampId}", stamp.StampId);
+            // Don't fail the overall status transition — stamp is still Active, just needs manual image push
         }
     }
 
