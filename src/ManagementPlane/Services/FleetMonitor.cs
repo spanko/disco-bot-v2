@@ -121,16 +121,21 @@ public class FleetMonitor : BackgroundService
 
             if (state == "Succeeded")
             {
-                // Try to find the ACA FQDN from deployment outputs
+                // Extract FQDN from deployment outputs (ARM mangles key casing)
                 string? fqdn = null;
                 string? appName = null;
                 var outputs = latestDeployment.Data.Properties.Outputs?.ToObjectFromJson<Dictionary<string, OutputValue>>();
                 if (outputs != null)
                 {
-                    if (outputs.TryGetValue("containerAppFqdn", out var fqdnOut))
-                        fqdn = fqdnOut.Value?.ToString();
-                    if (outputs.TryGetValue("containerAppName", out var nameOut))
-                        appName = nameOut.Value?.ToString();
+                    // ARM output keys have inconsistent casing — search case-insensitively
+                    foreach (var kv in outputs)
+                    {
+                        var key = kv.Key.ToLowerInvariant().Replace("_", "");
+                        if (key == "containerappfqdn")
+                            fqdn = kv.Value.Value?.ToString();
+                        else if (key == "containerappname")
+                            appName = kv.Value.Value?.ToString();
+                    }
                 }
 
                 var updated = stamp with
