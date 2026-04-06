@@ -78,13 +78,14 @@ module cosmos 'modules/cosmos-db.bicep' = {
 }
 
 // AI Search — knowledge semantic index + Foundry vector stores
-module aiSearch 'modules/ai-search.bicep' = {
+// Skipped in lightweight mode (not needed)
+module aiSearch 'modules/ai-search.bicep' = if (conversationMode != 'lightweight') {
   name: 'deploy-ai-search'
   params: {
     searchServiceName: '${baseName}-search-${uniqueSuffix}'
     location: location
     tags: tags
-    sku: 'free'
+    sku: 'basic'
   }
 }
 
@@ -154,7 +155,7 @@ module containerApp 'modules/container-app.bicep' = {
     cosmosEndpoint: cosmos.outputs.endpoint
     cosmosDatabase: 'discovery'
     storageEndpoint: storage.outputs.blobEndpoint
-    aiSearchEndpoint: aiSearch.outputs.searchEndpoint
+    aiSearchEndpoint: conversationMode != 'lightweight' ? aiSearch!.outputs.searchEndpoint : ''
     knowledgeIndexName: 'knowledge-items'
     appInsightsConnectionString: appInsights.outputs.connectionString
     conversationMode: conversationMode
@@ -171,7 +172,7 @@ module rbac 'modules/role-assignments.bicep' = {
   params: {
     cosmosAccountId: cosmos.outputs.accountId
     cosmosAccountName: cosmos.outputs.accountName
-    searchServiceId: aiSearch.outputs.searchServiceId
+    searchServiceId: conversationMode != 'lightweight' ? aiSearch!.outputs.searchServiceId : ''
     storageAccountId: storage.outputs.storageAccountId
     appPrincipalId: containerApp.outputs.containerAppPrincipalId
     deployerObjectId: deployerObjectId
@@ -207,7 +208,7 @@ output MODEL_DEPLOYMENT_NAME string = primaryModelName
 output COSMOS_ENDPOINT string = cosmos.outputs.endpoint
 output COSMOS_DATABASE string = 'discovery'
 output STORAGE_ENDPOINT string = storage.outputs.blobEndpoint
-output AI_SEARCH_ENDPOINT string = aiSearch.outputs.searchEndpoint
+output AI_SEARCH_ENDPOINT string = conversationMode != 'lightweight' ? aiSearch!.outputs.searchEndpoint : ''
 output APP_INSIGHTS_CONNECTION string = appInsights.outputs.connectionString
 output ACR_NAME string = acr.name
 output ACR_LOGIN_SERVER string = acr.properties.loginServer
