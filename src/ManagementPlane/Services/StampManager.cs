@@ -61,8 +61,11 @@ public class StampManager
     /// </summary>
     public async Task<Stamp> ProvisionStampAsync(CreateStampRequest request, string subscriptionId)
     {
-        var stampId = $"{request.Prefix}-{request.Suffix}";
-        var resourceGroupName = $"{request.Prefix}-{request.Suffix}";
+        // Azure resource names (storage, cosmos, etc.) require lowercase
+        var prefix = request.Prefix.ToLowerInvariant();
+        var suffix = request.Suffix.ToLowerInvariant();
+        var stampId = $"{prefix}-{suffix}";
+        var resourceGroupName = $"{prefix}-{suffix}";
 
         var stamp = new Stamp
         {
@@ -70,8 +73,8 @@ public class StampManager
             StampId = stampId,
             Name = request.Name,
             Description = request.Description ?? "",
-            Prefix = request.Prefix,
-            Suffix = request.Suffix,
+            Prefix = prefix,
+            Suffix = suffix,
             ResourceGroup = resourceGroupName,
             SubscriptionId = subscriptionId,
             Location = request.Location,
@@ -114,8 +117,8 @@ public class StampManager
                 },
                 Parameters = BinaryData.FromObjectAsJson(new
                 {
-                    prefix = new { value = request.Prefix },
-                    suffix = new { value = request.Suffix },
+                    prefix = new { value = prefix },
+                    suffix = new { value = suffix },
                     location = new { value = request.Location },
                     deployerObjectId = new { value = _deployerObjectId },
                     conversationMode = new { value = ToBicepValue(request.ConversationMode) },
