@@ -467,11 +467,11 @@
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label>Prefix</label>
+          <label>Prefix <span style="font-weight:400;text-transform:none;letter-spacing:0">(lowercase a-z, 0-9)</span></label>
           <input type="text" id="stampPrefix" placeholder="e.g. acme" pattern="[a-z0-9]+" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9]/g,'')">
         </div>
         <div class="form-group">
-          <label>Suffix</label>
+          <label>Suffix <span style="font-weight:400;text-transform:none;letter-spacing:0">(lowercase a-z, 0-9)</span></label>
           <input type="text" id="stampSuffix" placeholder="e.g. prod" pattern="[a-z0-9]+" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9]/g,'')">
         </div>
       </div>
@@ -607,9 +607,11 @@ function renderStamps(stamps) {
             ? `<button onclick="pauseStamp('${esc(s.stampId)}')" title="Pause">Pause</button>`
             : s.status === 'Paused'
               ? `<button onclick="resumeStamp('${esc(s.stampId)}')" title="Resume">Resume</button>`
-              : s.status === 'Failed'
-                ? `<button onclick="deleteStamp('${esc(s.stampId)}')" title="Delete" style="color:var(--red)">Delete</button>`
-                : ''
+              : ''
+          }
+          ${s.status === 'Failed' || s.status === 'Provisioning'
+            ? `<button onclick="deleteStamp('${esc(s.stampId)}')" title="Delete" style="color:var(--red)">Delete</button>`
+            : ''
           }
           ${fqdn ? `<button onclick="window.open('https://${esc(fqdn)}','_blank')" title="Open">Open</button>` : ''}
         </div>

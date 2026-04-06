@@ -1,24 +1,30 @@
+using Azure.ResourceManager;
+using Azure.ResourceManager.Resources;
 using ManagementPlane.Models;
 
 namespace ManagementPlane.Services;
 
 /// <summary>
 /// Background service that periodically polls stamp health endpoints
-/// and updates stamp status in the registry. Also detects idle stamps.
+/// and updates stamp status in the registry. Also detects idle stamps
+/// and checks ARM deployment status for provisioning stamps.
 /// </summary>
 public class FleetMonitor : BackgroundService
 {
     private readonly StampManager _stampManager;
+    private readonly ArmClient _armClient;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<FleetMonitor> _logger;
-    private readonly TimeSpan _pollInterval = TimeSpan.FromMinutes(5);
+    private readonly TimeSpan _pollInterval = TimeSpan.FromMinutes(1);
 
     public FleetMonitor(
         StampManager stampManager,
+        ArmClient armClient,
         IHttpClientFactory httpClientFactory,
         ILogger<FleetMonitor> logger)
     {
         _stampManager = stampManager;
+        _armClient = armClient;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
     }
@@ -45,6 +51,14 @@ public class FleetMonitor : BackgroundService
     private async Task PollAllStampsAsync(CancellationToken ct)
     {
         var stamps = await _stampManager.ListStampsAsync();
+
+        // Check ARM deployment status for provisioning stamps
+        foreach (var stamp in stamps.Where(s => s.Status == StampStatus.Provisioning))
+        {
+            await CheckDeploymentStatusAsync(stamp);
+        }
+
+        // Health-check active/paused stamps
         var client = _httpClientFactory.CreateClient("fleet-monitor");
         client.Timeout = TimeSpan.FromSeconds(10);
 
@@ -80,6 +94,71 @@ public class FleetMonitor : BackgroundService
             }
         }
     }
+
+    private async Task CheckDeploymentStatusAsync(Stamp stamp)
+    {
+        try
+        {
+            var rgId = new Azure.Core.ResourceIdentifier(
+                $"/subscriptions/{stamp.SubscriptionId}/resourceGroups/{stamp.ResourceGroup}");
+            var rg = _armClient.GetResourceGroupResource(rgId);
+
+            // Find the latest stamp deployment
+            ArmDeploymentResource? latestDeployment = null;
+            await foreach (var deployment in rg.GetArmDeployments().GetAllAsync())
+            {
+                if (deployment.Data.Name.StartsWith($"stamp-{stamp.StampId}"))
+                {
+                    latestDeployment = deployment;
+                    break; // Most recent first
+                }
+            }
+
+            if (latestDeployment is null) return;
+
+            var state = latestDeployment.Data.Properties.ProvisioningState?.ToString();
+            _logger.LogInformation("Deployment status for {StampId}: {State}", stamp.StampId, state);
+
+            if (state == "Succeeded")
+            {
+                // Try to find the ACA FQDN from deployment outputs
+                string? fqdn = null;
+                string? appName = null;
+                var outputs = latestDeployment.Data.Properties.Outputs?.ToObjectFromJson<Dictionary<string, OutputValue>>();
+                if (outputs != null)
+                {
+                    if (outputs.TryGetValue("containerAppFqdn", out var fqdnOut))
+                        fqdn = fqdnOut.Value?.ToString();
+                    if (outputs.TryGetValue("containerAppName", out var nameOut))
+                        appName = nameOut.Value?.ToString();
+                }
+
+                var updated = stamp with
+                {
+                    Status = StampStatus.Active,
+                    ContainerAppFqdn = fqdn ?? stamp.ContainerAppFqdn,
+                    ContainerAppName = appName ?? stamp.ContainerAppName,
+                    LastError = null,
+                };
+                await _stampManager.UpdateStampAsync(updated);
+                _logger.LogInformation("Stamp {StampId} is now Active. FQDN: {Fqdn}", stamp.StampId, fqdn);
+            }
+            else if (state == "Failed")
+            {
+                var error = latestDeployment.Data.Properties.Error?.Message ?? "Deployment failed";
+                var updated = stamp with { Status = StampStatus.Failed, LastError = error };
+                await _stampManager.UpdateStampAsync(updated);
+                _logger.LogWarning("Stamp {StampId} deployment failed: {Error}", stamp.StampId, error);
+            }
+            // else still running — leave as Provisioning
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to check deployment status for stamp: {StampId}", stamp.StampId);
+        }
+    }
+
+    private record OutputValue(object? Value);
 
     /// <summary>
     /// Gets aggregated fleet health.
