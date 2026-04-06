@@ -64,6 +64,12 @@ public class FleetMonitor : BackgroundService
             await CheckDeploymentStatusAsync(stamp);
         }
 
+        // Backfill: Active stamps missing FQDN — re-extract from deployment outputs
+        foreach (var stamp in stamps.Where(s => s.Status == StampStatus.Active && s.ContainerAppFqdn is null))
+        {
+            await CheckDeploymentStatusAsync(stamp);
+        }
+
         // Health-check active/paused stamps
         var client = _httpClientFactory.CreateClient("fleet-monitor");
         client.Timeout = TimeSpan.FromSeconds(10);
