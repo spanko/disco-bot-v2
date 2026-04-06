@@ -136,6 +136,15 @@ app.MapPost("/api/fleet/stamps/{stampId}/resume", async (string stampId, StampMa
     }
 });
 
+app.MapDelete("/api/fleet/stamps/{stampId}", async (string stampId, StampManager manager) =>
+{
+    var stamp = await manager.GetStampAsync(stampId);
+    if (stamp is null) return Results.NotFound();
+
+    await manager.DeleteStampAsync(stampId);
+    return Results.Ok(new { deleted = stampId });
+});
+
 app.MapGet("/api/fleet/health", async (FleetMonitor monitor) =>
 {
     var health = await monitor.GetFleetHealthAsync();

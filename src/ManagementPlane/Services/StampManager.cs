@@ -135,14 +135,15 @@ public class StampManager
             });
 
             var deployments = rgResult.Value.GetArmDeployments();
-            var deploymentResult = await deployments.CreateOrUpdateAsync(
+            var deploymentName = $"stamp-{stampId}-{DateTime.UtcNow:yyyyMMddHHmm}";
+            var operation = await deployments.CreateOrUpdateAsync(
                 Azure.WaitUntil.Started, // Don't wait — this takes minutes
-                $"stamp-{stampId}-{DateTime.UtcNow:yyyyMMddHHmm}",
+                deploymentName,
                 deploymentContent);
 
             _logger.LogInformation(
-                "Deployment initiated for stamp {StampId}: {DeploymentId}",
-                stampId, deploymentResult.Value.Id);
+                "Deployment initiated for stamp {StampId}: {DeploymentName}, HasCompleted={HasCompleted}",
+                stampId, deploymentName, operation.HasCompleted);
 
             // Update stamp with provisioning status
             stamp = stamp with { Status = StampStatus.Provisioning };
@@ -197,6 +198,15 @@ public class StampManager
         stamp = stamp with { Status = StampStatus.Active };
         await _stampsContainer.UpsertItemAsync(stamp, new PartitionKey(stampId));
         return stamp;
+    }
+
+    /// <summary>
+    /// Deletes a stamp record from the registry.
+    /// </summary>
+    public async Task DeleteStampAsync(string stampId)
+    {
+        await _stampsContainer.DeleteItemAsync<Stamp>(stampId, new PartitionKey(stampId));
+        _logger.LogInformation("Deleted stamp: {StampId}", stampId);
     }
 
     private static string ToBicepValue(ConversationMode mode) => mode switch

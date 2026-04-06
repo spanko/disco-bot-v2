@@ -607,7 +607,9 @@ function renderStamps(stamps) {
             ? `<button onclick="pauseStamp('${esc(s.stampId)}')" title="Pause">Pause</button>`
             : s.status === 'Paused'
               ? `<button onclick="resumeStamp('${esc(s.stampId)}')" title="Resume">Resume</button>`
-              : ''
+              : s.status === 'Failed'
+                ? `<button onclick="deleteStamp('${esc(s.stampId)}')" title="Delete" style="color:var(--red)">Delete</button>`
+                : ''
           }
           ${fqdn ? `<button onclick="window.open('https://${esc(fqdn)}','_blank')" title="Open">Open</button>` : ''}
         </div>
@@ -623,6 +625,15 @@ async function pauseStamp(id) {
     showToast('Stamp paused', 'success');
     refreshAll();
   } catch (e) { showToast('Failed to pause: ' + e.message, 'error'); }
+}
+
+async function deleteStamp(id) {
+  if (!confirm(`Delete stamp "${id}"? This only removes the registry entry, not Azure resources.`)) return;
+  try {
+    await fetchJSON(`/api/fleet/stamps/${id}`, { method: 'DELETE' });
+    showToast('Stamp deleted', 'success');
+    refreshAll();
+  } catch (e) { showToast('Failed to delete: ' + e.message, 'error'); }
 }
 
 async function resumeStamp(id) {
