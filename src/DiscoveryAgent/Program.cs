@@ -70,17 +70,28 @@ else
     builder.Services.AddSingleton(sp =>
         sp.GetRequiredService<CosmosClient>().GetDatabase(settings.CosmosDatabase));
 
-    builder.Services.AddSingleton(_ =>
-        new SearchClient(
-            new Uri(settings.AiSearchEndpoint),
-            settings.KnowledgeIndexName,
-            credential));
+    if (!string.IsNullOrEmpty(settings.AiSearchEndpoint))
+    {
+        builder.Services.AddSingleton(_ =>
+            new SearchClient(
+                new Uri(settings.AiSearchEndpoint),
+                settings.KnowledgeIndexName,
+                credential));
+        builder.Services.AddSingleton<IKnowledgeStore, KnowledgeStore>();
+        builder.Services.AddSingleton<IKnowledgeQueryService, KnowledgeQueryService>();
+    }
+    else
+    {
+        builder.Services.AddSingleton<IKnowledgeStore, NullKnowledgeStore>();
+        builder.Services.AddSingleton<IKnowledgeQueryService, NullKnowledgeQueryService>();
+    }
 
-    builder.Services.AddSingleton(_ =>
-        new BlobServiceClient(new Uri(settings.StorageEndpoint), credential));
+    if (!string.IsNullOrEmpty(settings.StorageEndpoint))
+    {
+        builder.Services.AddSingleton(_ =>
+            new BlobServiceClient(new Uri(settings.StorageEndpoint), credential));
+    }
 
-    builder.Services.AddSingleton<IKnowledgeStore, KnowledgeStore>();
-    builder.Services.AddSingleton<IKnowledgeQueryService, KnowledgeQueryService>();
     builder.Services.AddSingleton<IContextManagementService, ContextManagementService>();
     builder.Services.AddSingleton<IQuestionnaireProcessor, QuestionnaireProcessor>();
     builder.Services.AddSingleton<IUserProfileService, UserProfileService>();
@@ -175,10 +186,13 @@ app.MapGet("/health/ready", async (
         catch { checks["storage"] = "failed"; }
     }
 
+    // Only gate readiness on agent init — infra checks (cosmos/search/storage) can be degraded
+    var agentReady = checks["agent"] is "ok" or "lazy_init";
     var allHealthy = checks.Values.All(v => v is "ok" or "lazy_init" or "lightweight" or "standard" or "full");
-    return allHealthy
-        ? Results.Ok(new { status = "healthy", checks, timestamp = DateTime.UtcNow })
-        : Results.Json(new { status = "degraded", checks, timestamp = DateTime.UtcNow }, statusCode: 503);
+    var status = allHealthy ? "healthy" : "degraded";
+    return agentReady
+        ? Results.Ok(new { status, checks, timestamp = DateTime.UtcNow })
+        : Results.Json(new { status, checks, timestamp = DateTime.UtcNow }, statusCode: 503);
 });
 
 // =====================================================================

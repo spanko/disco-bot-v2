@@ -76,8 +76,7 @@ public class DiscoveryBotSettings
         if (!IsLightweight)
         {
             if (string.IsNullOrEmpty(CosmosEndpoint)) missing.Add("COSMOS_ENDPOINT");
-            if (string.IsNullOrEmpty(StorageEndpoint)) missing.Add("STORAGE_ENDPOINT");
-            if (string.IsNullOrEmpty(AiSearchEndpoint)) missing.Add("AI_SEARCH_ENDPOINT");
+            // StorageEndpoint and AiSearchEndpoint are optional — features degrade gracefully
         }
 
         if (AuthMode is "magic_link" && string.IsNullOrEmpty(JwtSigningKey))
