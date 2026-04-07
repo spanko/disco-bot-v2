@@ -109,32 +109,42 @@ public class StampManager
             if (string.IsNullOrEmpty(_templateSpecId))
                 throw new InvalidOperationException("STAMP_TEMPLATE_SPEC_ID env var is required for stamp provisioning");
 
+            var parameters = new Dictionary<string, object>
+            {
+                ["prefix"] = new { value = prefix },
+                ["suffix"] = new { value = suffix },
+                ["location"] = new { value = request.Location },
+                ["deployerObjectId"] = new { value = _deployerObjectId },
+                ["conversationMode"] = new { value = ToBicepValue(request.ConversationMode) },
+                ["authMode"] = new { value = ToBicepValue(request.AuthMode) },
+                ["enableObservability"] = new { value = false },
+                ["tags"] = new
+                {
+                    value = new Dictionary<string, string>
+                    {
+                        ["project"] = "discovery-bot-v2",
+                        ["stamp"] = stampId,
+                        ["client"] = request.Name,
+                        ["managedBy"] = "management-plane",
+                    }
+                },
+            };
+
+            // Generate and inject JWT signing key for magic_link auth
+            if (request.AuthMode == AuthMode.MagicLink)
+            {
+                var keyBytes = new byte[32];
+                System.Security.Cryptography.RandomNumberGenerator.Fill(keyBytes);
+                parameters["jwtSigningKey"] = new { value = Convert.ToBase64String(keyBytes) };
+            }
+
             var deploymentContent = new ArmDeploymentContent(new ArmDeploymentProperties(ArmDeploymentMode.Incremental)
             {
                 TemplateLink = new ArmDeploymentTemplateLink
                 {
                     Id = _templateSpecId,
                 },
-                Parameters = BinaryData.FromObjectAsJson(new
-                {
-                    prefix = new { value = prefix },
-                    suffix = new { value = suffix },
-                    location = new { value = request.Location },
-                    deployerObjectId = new { value = _deployerObjectId },
-                    conversationMode = new { value = ToBicepValue(request.ConversationMode) },
-                    authMode = new { value = ToBicepValue(request.AuthMode) },
-                    enableObservability = new { value = false },
-                    tags = new
-                    {
-                        value = new Dictionary<string, string>
-                        {
-                            ["project"] = "discovery-bot-v2",
-                            ["stamp"] = stampId,
-                            ["client"] = request.Name,
-                            ["managedBy"] = "management-plane",
-                        }
-                    },
-                }),
+                Parameters = BinaryData.FromObjectAsJson(parameters),
             });
 
             var deployments = rgResult.Value.GetArmDeployments();

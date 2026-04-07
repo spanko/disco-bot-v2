@@ -39,6 +39,10 @@ param conversationMode string = 'standard'
 @allowed(['none', 'magic_link', 'invite_code', 'entra_external'])
 param authMode string = 'none'
 
+@secure()
+@description('JWT signing key for magic_link auth. Auto-generated if empty.')
+param jwtSigningKey string = ''
+
 @description('Container image tag (default: latest). Set to empty string for initial deploy with placeholder image.')
 param imageTag string = ''
 
@@ -172,6 +176,7 @@ module containerApp 'modules/container-app.bicep' = {
     appInsightsConnectionString: appInsights.outputs.connectionString
     conversationMode: conversationMode
     authMode: authMode
+    jwtSigningKey: jwtSigningKey
   }
 }
 

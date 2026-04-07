@@ -24,6 +24,10 @@ param conversationMode string = 'standard'
 @allowed(['none', 'magic_link', 'invite_code', 'entra_external'])
 param authMode string = 'none'
 
+@secure()
+@description('JWT signing key for magic_link auth mode')
+param jwtSigningKey string = ''
+
 resource env 'Microsoft.App/managedEnvironments@2024-03-01' = {
   name: containerAppEnvName
   location: location
@@ -61,7 +65,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'discovery-bot'
           image: containerImage
           resources: { cpu: json('0.5'), memory: '1Gi' }
-          env: [
+          env: union([
             { name: 'PROJECT_ENDPOINT', value: projectEndpoint }
             { name: 'MODEL_DEPLOYMENT_NAME', value: modelDeploymentName }
             { name: 'AGENT_NAME', value: agentName }
@@ -74,7 +78,9 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'CONVERSATION_MODE', value: conversationMode }
             { name: 'AUTH_MODE', value: authMode }
             { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
-          ]
+          ], authMode == 'magic_link' ? [
+            { name: 'JWT_SIGNING_KEY', value: jwtSigningKey }
+          ] : [])
           probes: [
             {
               type: 'Liveness'
