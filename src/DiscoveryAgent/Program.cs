@@ -85,7 +85,11 @@ else
     }
 
     // KnowledgeStore always uses Cosmos; SearchClient is optional (injected if available)
-    builder.Services.AddSingleton<IKnowledgeStore, KnowledgeStore>();
+    builder.Services.AddSingleton<IKnowledgeStore>(sp =>
+        new KnowledgeStore(
+            sp.GetRequiredService<Database>(),
+            sp.GetRequiredService<ILogger<KnowledgeStore>>(),
+            sp.GetService<SearchClient>()));
 
     if (!string.IsNullOrEmpty(settings.StorageEndpoint))
     {
