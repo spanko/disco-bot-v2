@@ -178,19 +178,29 @@ public class ConversationHandler : IConversationHandler
 
             // Submit tool results on the SAME conversation-bound client.
             // Conversation binding provides continuity — no previousResponseId needed.
-            var followUpOptions = new CreateResponseOptions();
-            foreach (var output in inputItems)
-                followUpOptions.InputItems.Add(output);
+            try
+            {
+                var followUpOptions = new CreateResponseOptions();
+                foreach (var output in inputItems)
+                    followUpOptions.InputItems.Add(output);
 
-            var nextResponse = await responseClient.CreateResponseAsync(
-                followUpOptions, ct);
+                var nextResponse = await responseClient.CreateResponseAsync(
+                    followUpOptions, ct);
 
-            currentResponse = nextResponse.Value;
-            RecordTokenUsage(currentResponse);
+                currentResponse = nextResponse.Value;
+                RecordTokenUsage(currentResponse);
 
-            _logger.LogInformation(
-                "Follow-up response: {ResponseId}, Output={OutputLen} chars",
-                currentResponse.Id, currentResponse.GetOutputText().Length);
+                _logger.LogInformation(
+                    "Follow-up response: {ResponseId}, Output={OutputLen} chars",
+                    currentResponse.Id, currentResponse.GetOutputText().Length);
+            }
+            catch (Exception ex) when (ex.Message.Contains("No tool output found") || ex.Message.Contains("tool_output"))
+            {
+                // Conversation state mismatch — the tool call ID is stale.
+                // Break out of the tool loop and return whatever text we have so far.
+                _logger.LogWarning(ex, "Tool output submission failed — returning partial response");
+                break;
+            }
         }
 
         var outputText = currentResponse.GetOutputText();
