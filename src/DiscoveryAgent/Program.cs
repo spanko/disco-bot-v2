@@ -77,18 +77,18 @@ else
                 new Uri(settings.AiSearchEndpoint),
                 settings.KnowledgeIndexName,
                 credential));
-        builder.Services.AddSingleton<IKnowledgeQueryService, KnowledgeQueryService>();
-    }
-    else
-    {
-        builder.Services.AddSingleton<IKnowledgeQueryService, NullKnowledgeQueryService>();
     }
 
-    // KnowledgeStore always uses Cosmos; SearchClient is optional (injected if available)
+    // Knowledge services always use Cosmos; SearchClient is optional for semantic features
     builder.Services.AddSingleton<IKnowledgeStore>(sp =>
         new KnowledgeStore(
             sp.GetRequiredService<Database>(),
             sp.GetRequiredService<ILogger<KnowledgeStore>>(),
+            sp.GetService<SearchClient>()));
+    builder.Services.AddSingleton<IKnowledgeQueryService>(sp =>
+        new KnowledgeQueryService(
+            sp.GetRequiredService<Database>(),
+            sp.GetRequiredService<ILogger<KnowledgeQueryService>>(),
             sp.GetService<SearchClient>()));
 
     if (!string.IsNullOrEmpty(settings.StorageEndpoint))

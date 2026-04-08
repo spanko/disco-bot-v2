@@ -13,10 +13,10 @@ namespace DiscoveryAgent.Services;
 public class KnowledgeQueryService : IKnowledgeQueryService
 {
     private readonly Database _cosmosDb;
-    private readonly SearchClient _searchClient;
+    private readonly SearchClient? _searchClient;
     private readonly ILogger<KnowledgeQueryService> _logger;
 
-    public KnowledgeQueryService(Database cosmosDb, SearchClient searchClient, ILogger<KnowledgeQueryService> logger)
+    public KnowledgeQueryService(Database cosmosDb, ILogger<KnowledgeQueryService> logger, SearchClient? searchClient = null)
     {
         _cosmosDb = cosmosDb;
         _searchClient = searchClient;
