@@ -431,6 +431,11 @@ function handleSSEEvent(run, eventType, data) {
     }
     renderWatch();
     scrollMessages();
+  } else if (eventType === 'error' || data.type === 'error') {
+    run.messages.push({ role: 'agent', content: '[Error: ' + (data.error || 'Unknown error') + ']', turn: run.totalTurns + 1 });
+    setStatus('error');
+    document.getElementById('runBtn').disabled = false;
+    renderWatch();
   } else if (eventType === 'complete' || data.type === 'complete') {
     run.totalTurns = data.totalTurns;
     run.conversationId = data.conversationId;

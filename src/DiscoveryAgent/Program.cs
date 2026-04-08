@@ -653,11 +653,21 @@ app.MapPost("/api/test/run", async (
         }
     }, heartbeatCts.Token);
 
-    await foreach (var evt in testRunner.RunAsync(request, handler, knowledgeStore, ct))
+    try
     {
-        var json = JsonSerializer.Serialize(evt, jsonOpts);
-        var eventType = evt is TestCompleteEvent ? "complete" : "turn";
-        await res.WriteAsync($"event: {eventType}\ndata: {json}\n\n", ct);
+        await foreach (var evt in testRunner.RunAsync(request, handler, knowledgeStore, ct))
+        {
+            var json = JsonSerializer.Serialize(evt, jsonOpts);
+            var eventType = evt is TestCompleteEvent ? "complete" : "turn";
+            await res.WriteAsync($"event: {eventType}\ndata: {json}\n\n", ct);
+            await res.Body.FlushAsync(ct);
+        }
+    }
+    catch (Exception ex)
+    {
+        log.LogError(ex, "Test run failed");
+        var errorJson = JsonSerializer.Serialize(new { type = "error", error = $"{ex.GetType().Name}: {ex.Message}" }, jsonOpts);
+        await res.WriteAsync($"event: error\ndata: {errorJson}\n\n", ct);
         await res.Body.FlushAsync(ct);
     }
 

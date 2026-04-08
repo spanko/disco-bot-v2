@@ -131,9 +131,13 @@ public class TestRunnerService
         // Step 2: Loop until maxTurns or agent signals completion
         while (turnNumber < request.MaxTurns && !ct.IsCancellationRequested)
         {
-            // Generate respondent reply
-            var respondentReply = await GenerateRespondentReply(
-                chatClient, respondentPrompt, conversationHistory, ct);
+            // Pace the conversation to avoid rate limits (429)
+            await Task.Delay(2000, ct);
+
+            // Generate respondent reply with retry on 429
+            var respondentReply = await WithRetry(
+                () => GenerateRespondentReply(chatClient, respondentPrompt, conversationHistory, ct),
+                ct);
             turnNumber++;
 
             var respondentTurn = new TestTurnEvent
@@ -154,14 +158,16 @@ public class TestRunnerService
                 break;
             }
 
-            // Send respondent reply to agent
+            // Send respondent reply to agent (with retry on 429)
             var followUpRequest = new ConversationRequest(
                 UserId: userId,
                 Message: respondentReply,
                 ConversationId: conversationId,
                 ContextId: request.ContextId);
 
-            agentResponse = await handler.HandleAsync(followUpRequest, ct);
+            agentResponse = await WithRetry(
+                () => handler.HandleAsync(followUpRequest, ct),
+                ct);
             turnNumber++;
 
             UpdateCoverage(coveredIds, agentResponse.ExtractedKnowledgeIds, knowledgeStore, request.ContextId);
@@ -276,6 +282,22 @@ public class TestRunnerService
         {
             // We'll let the CoverageAnalyzer do the detailed query;
             // here we just note that extraction occurred.
+        }
+    }
+
+    private static async Task<T> WithRetry<T>(Func<Task<T>> action, CancellationToken ct, int maxRetries = 3)
+    {
+        for (int attempt = 0; ; attempt++)
+        {
+            try
+            {
+                return await action();
+            }
+            catch (Exception ex) when (attempt < maxRetries && ex.Message.Contains("429"))
+            {
+                var delay = (attempt + 1) * 10_000; // 10s, 20s, 30s
+                await Task.Delay(delay, ct);
+            }
         }
     }
 
