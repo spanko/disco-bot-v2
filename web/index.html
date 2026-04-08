@@ -213,6 +213,17 @@ function esc(s) {
   return d.innerHTML;
 }
 
+function renderMarkdown(text) {
+  return esc(text)
+    .replace(/^### (.+)$/gm, '<strong style="font-size:15px">$1</strong>')
+    .replace(/^## (.+)$/gm, '<strong style="font-size:16px">$1</strong>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/^- (.+)$/gm, '<li style="margin-left:16px">$1</li>')
+    .replace(/^(\d+)\. (.+)$/gm, '<li style="margin-left:16px">$2</li>')
+    .replace(/\n/g, '<br>');
+}
+
 function addMessage(role, text, extras, skipSave) {
   const div = document.createElement('div');
   div.className = `message ${role}`;
@@ -224,7 +235,11 @@ function addMessage(role, text, extras, skipSave) {
   const content = document.createElement('div');
   const bubble = document.createElement('div');
   bubble.className = 'content';
-  bubble.textContent = text;
+  if (role === 'agent') {
+    bubble.innerHTML = renderMarkdown(text);
+  } else {
+    bubble.textContent = text;
+  }
   content.appendChild(bubble);
 
   if (extras?.files?.length) {
