@@ -326,6 +326,42 @@ app.MapPost("/api/conversation", async (
 });
 
 // =====================================================================
+// Conversation History API
+// =====================================================================
+
+app.MapGet("/api/conversations/{conversationId}/history", async (
+    string conversationId, Database cosmosDb) =>
+{
+    var container = cosmosDb.GetContainer("conversation-turns");
+    var query = new QueryDefinition(
+        "SELECT * FROM c WHERE c.conversationId = @convId ORDER BY c.timestamp ASC")
+        .WithParameter("@convId", conversationId);
+
+    var turns = new List<ConversationTurn>();
+    using var it = container.GetItemQueryIterator<ConversationTurn>(query);
+    while (it.HasMoreResults) turns.AddRange(await it.ReadNextAsync());
+    return Results.Ok(turns);
+});
+
+app.MapGet("/api/conversations", async (
+    string? contextId, Database cosmosDb) =>
+{
+    var container = cosmosDb.GetContainer("conversation-turns");
+    var sql = string.IsNullOrEmpty(contextId)
+        ? "SELECT DISTINCT c.conversationId, c.contextId, c.userId, MIN(c.timestamp) as started, MAX(c.timestamp) as lastActivity, COUNT(1) as turnCount FROM c GROUP BY c.conversationId, c.contextId, c.userId"
+        : "SELECT DISTINCT c.conversationId, c.contextId, c.userId, MIN(c.timestamp) as started, MAX(c.timestamp) as lastActivity, COUNT(1) as turnCount FROM c WHERE c.contextId = @ctx GROUP BY c.conversationId, c.contextId, c.userId";
+
+    var query = new QueryDefinition(sql);
+    if (!string.IsNullOrEmpty(contextId))
+        query = query.WithParameter("@ctx", contextId);
+
+    var convos = new List<dynamic>();
+    using var it = container.GetItemQueryIterator<dynamic>(query);
+    while (it.HasMoreResults) convos.AddRange(await it.ReadNextAsync());
+    return Results.Ok(convos);
+});
+
+// =====================================================================
 // Knowledge APIs
 // =====================================================================
 

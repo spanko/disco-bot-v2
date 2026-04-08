@@ -6,6 +6,7 @@ using DiscoveryAgent.Core.Interfaces;
 using DiscoveryAgent.Core.Models;
 using DiscoveryAgent.Services;
 using DiscoveryAgent.Telemetry;
+using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
 using OpenAI.Responses;
 using System.Diagnostics;
@@ -32,6 +33,7 @@ public class ConversationHandler : IConversationHandler
     private readonly IUserProfileService _userProfiles;
     private readonly IContextManagementService _contextService;
     private readonly BlobServiceClient _blobService;
+    private readonly Database _cosmosDb;
     private readonly DiscoveryBotSettings _settings;
     private readonly ILogger<ConversationHandler> _logger;
 
@@ -42,6 +44,7 @@ public class ConversationHandler : IConversationHandler
         IUserProfileService userProfiles,
         IContextManagementService contextService,
         BlobServiceClient blobService,
+        Database cosmosDb,
         DiscoveryBotSettings settings,
         ILogger<ConversationHandler> logger)
     {
@@ -51,6 +54,7 @@ public class ConversationHandler : IConversationHandler
         _userProfiles = userProfiles;
         _contextService = contextService;
         _blobService = blobService;
+        _cosmosDb = cosmosDb;
         _settings = settings;
         _logger = logger;
     }
@@ -190,6 +194,26 @@ public class ConversationHandler : IConversationHandler
         }
 
         var outputText = currentResponse.GetOutputText();
+
+        // Persist conversation turn to Cosmos
+        try
+        {
+            var turnsContainer = _cosmosDb.GetContainer("conversation-turns");
+            var turn = new ConversationTurn
+            {
+                ConversationId = conversationId,
+                ContextId = request.ContextId ?? "default",
+                UserId = request.UserId,
+                UserMessage = request.Message,
+                AgentResponse = outputText,
+                ExtractedKnowledgeIds = extractedKnowledgeIds.Count > 0 ? extractedKnowledgeIds : null,
+            };
+            await turnsContainer.UpsertItemAsync(turn, new PartitionKey(conversationId));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to persist conversation turn for {ConversationId}", conversationId);
+        }
 
         return new ConversationResponse(
             ConversationId: conversationId,

@@ -166,6 +166,23 @@ public record DiscoverySession
 }
 
 // ============================================================================
+// Conversation History
+// ============================================================================
+
+public class ConversationTurn
+{
+    public string Id { get; init; } = Guid.NewGuid().ToString();
+    public string ConversationId { get; init; } = "";
+    public string ContextId { get; init; } = "default";
+    public string UserId { get; init; } = "";
+    public int TurnNumber { get; init; }
+    public string UserMessage { get; init; } = "";
+    public string AgentResponse { get; init; } = "";
+    public List<string>? ExtractedKnowledgeIds { get; init; }
+    public DateTime Timestamp { get; init; } = DateTime.UtcNow;
+}
+
+// ============================================================================
 // API Request/Response Models
 // ============================================================================
 
