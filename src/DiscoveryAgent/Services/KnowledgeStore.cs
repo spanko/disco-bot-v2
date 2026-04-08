@@ -17,13 +17,13 @@ namespace DiscoveryAgent.Services;
 public class KnowledgeStore : IKnowledgeStore
 {
     private readonly Database _cosmosDb;
-    private readonly SearchClient _searchClient;
+    private readonly SearchClient? _searchClient;
     private readonly ILogger<KnowledgeStore> _logger;
 
     public KnowledgeStore(
         Database cosmosDb,
-        SearchClient searchClient,
-        ILogger<KnowledgeStore> logger)
+        ILogger<KnowledgeStore> logger,
+        SearchClient? searchClient = null)
     {
         _cosmosDb = cosmosDb;
         _searchClient = searchClient;
@@ -36,7 +36,8 @@ public class KnowledgeStore : IKnowledgeStore
         var container = _cosmosDb.GetContainer("knowledge-items");
         await container.UpsertItemAsync(item, new PartitionKey(item.RelatedContextId));
 
-        // Index in AI Search for semantic retrieval (non-fatal on failure)
+        // Index in AI Search for semantic retrieval (optional, non-fatal on failure)
+        if (_searchClient is null) goto done;
         try
         {
             var searchDoc = new SearchDocument(new Dictionary<string, object>
@@ -61,6 +62,7 @@ public class KnowledgeStore : IKnowledgeStore
             _logger.LogWarning(ex, "Failed to index knowledge item {Id} in search", item.Id);
         }
 
+        done:
         _logger.LogInformation("Knowledge stored: {Id} [{Category}] confidence={Confidence:F2}",
             item.Id, item.Category, item.Confidence);
 
@@ -89,6 +91,9 @@ public class KnowledgeStore : IKnowledgeStore
     public async Task<List<KnowledgeItem>> SearchAsync(
         string query, string? contextId = null, int maxResults = 10)
     {
+        if (_searchClient is null)
+            return await GetByContextAsync(contextId ?? "default");
+
         var options = new SearchOptions
         {
             Size = maxResults,
