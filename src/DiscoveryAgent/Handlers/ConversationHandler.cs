@@ -199,16 +199,50 @@ public class ConversationHandler : IConversationHandler
         );
     }
 
-    private static string BuildContextSystemMessage(DiscoveryContext context) =>
-        $"""
-        [DISCOVERY SESSION CONFIGURATION]
-        Project: {context.Name}
-        Description: {context.Description}
-        Mode: {context.DiscoveryMode}
-        Focus Areas: {string.Join(", ", context.DiscoveryAreas)}
-        Key Questions: {string.Join("; ", context.KeyQuestions)}
-        Please begin the discovery session following your instructions.
-        """;
+    private static string BuildContextSystemMessage(DiscoveryContext context)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("[DISCOVERY SESSION CONFIGURATION]");
+        sb.AppendLine($"Project: {context.Name}");
+        sb.AppendLine($"Description: {context.Description}");
+        sb.AppendLine($"Mode: {context.DiscoveryMode}");
+        sb.AppendLine($"Focus Areas: {string.Join(", ", context.DiscoveryAreas)}");
+        sb.AppendLine();
+
+        if (context.KeyQuestions.Count > 0)
+        {
+            sb.AppendLine("[KEY QUESTIONS]");
+            foreach (var q in context.KeyQuestions)
+                sb.AppendLine($"- {q}");
+            sb.AppendLine();
+        }
+
+        if (context.SensitiveAreas.Count > 0)
+        {
+            sb.AppendLine("[SENSITIVE AREAS — handle with care]");
+            foreach (var a in context.SensitiveAreas)
+                sb.AppendLine($"- {a}");
+            sb.AppendLine();
+        }
+
+        if (context.SuccessCriteria.Count > 0)
+        {
+            sb.AppendLine("[SUCCESS CRITERIA]");
+            foreach (var c in context.SuccessCriteria)
+                sb.AppendLine($"- {c}");
+            sb.AppendLine();
+        }
+
+        if (!string.IsNullOrEmpty(context.AgentInstructions))
+        {
+            sb.AppendLine("[AGENT INSTRUCTIONS]");
+            sb.AppendLine(context.AgentInstructions);
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("Begin the discovery session following the instructions above.");
+        return sb.ToString();
+    }
 
     // ─── Token usage tracking ─────────────────────────────────────────
 
