@@ -641,6 +641,18 @@ app.MapPost("/api/test/run", async (
     using var scope = sp.CreateScope();
     var handler = scope.ServiceProvider.GetRequiredService<IConversationHandler>();
 
+    // Start a heartbeat timer to keep the SSE connection alive during long LLM calls
+    using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+    var heartbeatTask = Task.Run(async () =>
+    {
+        while (!heartbeatCts.Token.IsCancellationRequested)
+        {
+            await Task.Delay(15000, heartbeatCts.Token).ConfigureAwait(false);
+            try { await res.WriteAsync(": heartbeat\n\n", heartbeatCts.Token); await res.Body.FlushAsync(heartbeatCts.Token); }
+            catch { break; }
+        }
+    }, heartbeatCts.Token);
+
     await foreach (var evt in testRunner.RunAsync(request, handler, knowledgeStore, ct))
     {
         var json = JsonSerializer.Serialize(evt, jsonOpts);
@@ -648,6 +660,9 @@ app.MapPost("/api/test/run", async (
         await res.WriteAsync($"event: {eventType}\ndata: {json}\n\n", ct);
         await res.Body.FlushAsync(ct);
     }
+
+    heartbeatCts.Cancel();
+    try { await heartbeatTask; } catch { /* expected */ }
 
     return Results.Empty;
 });
