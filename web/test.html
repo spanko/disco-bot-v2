@@ -147,9 +147,11 @@
   </div>
   <div class="stamp-coming-soon" id="stampComingSoon">Coming soon -- requires management plane to be operational.</div>
 
-  <div class="section-label">Context ID</div>
+  <div class="section-label">Discovery Context</div>
   <div style="margin-bottom:20px">
-    <input type="text" id="contextIdInput" value="default" style="border:1px solid #d0d0d0;border-radius:6px;padding:8px 12px;font-size:13px;width:300px;">
+    <select id="contextIdInput" style="border:1px solid #d0d0d0;border-radius:6px;padding:8px 12px;font-size:13px;min-width:300px;">
+      <option value="">Loading contexts...</option>
+    </select>
   </div>
 
   <div class="slider-row">
@@ -236,6 +238,38 @@ function switchTab(tabId) {
   document.querySelector('.tab[onclick*="' + tabId + '"]').classList.add('active');
   document.getElementById('panel-' + tabId).classList.add('active');
 }
+
+// =====================================================================
+// Load contexts into dropdown
+// =====================================================================
+async function loadTestContexts() {
+  const select = document.getElementById('contextIdInput');
+  try {
+    const res = await fetch('/api/manage/contexts');
+    if (!res.ok) throw new Error();
+    const contexts = await res.json();
+    select.innerHTML = '';
+    if (contexts.length === 0) {
+      select.innerHTML = '<option value="default">No contexts available</option>';
+    } else {
+      for (const ctx of contexts) {
+        const opt = document.createElement('option');
+        opt.value = ctx.contextId;
+        opt.textContent = ctx.name;
+        select.appendChild(opt);
+      }
+      if (contexts.length > 1) {
+        const unbounded = document.createElement('option');
+        unbounded.value = '';
+        unbounded.textContent = 'Unbounded Discovery';
+        select.appendChild(unbounded);
+      }
+    }
+  } catch {
+    select.innerHTML = '<option value="default">Unbounded Discovery</option>';
+  }
+}
+loadTestContexts();
 
 // =====================================================================
 // Init UI
