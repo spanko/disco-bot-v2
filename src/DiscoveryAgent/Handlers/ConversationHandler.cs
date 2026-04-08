@@ -194,12 +194,34 @@ public class ConversationHandler : IConversationHandler
                     "Follow-up response: {ResponseId}, Output={OutputLen} chars",
                     currentResponse.Id, currentResponse.GetOutputText().Length);
             }
-            catch (Exception ex) when (ex.Message.Contains("No tool output found") || ex.Message.Contains("tool_output"))
+            catch (Exception ex) when (ex.Message.Contains("No tool output found") || ex.Message.Contains("invalid_request_error"))
             {
-                // Conversation state mismatch — the tool call ID is stale.
-                // Break out of the tool loop and return whatever text we have so far.
-                _logger.LogWarning(ex, "Tool output submission failed — returning partial response");
-                break;
+                // Conversation state mismatch — retry with only the tool outputs (no echo of function call items)
+                _logger.LogWarning(ex, "Tool output submission failed — retrying with outputs only");
+                try
+                {
+                    var outputsOnly = new CreateResponseOptions();
+                    foreach (var item in inputItems)
+                    {
+                        if (item is not FunctionCallResponseItem)
+                            outputsOnly.InputItems.Add(item);
+                    }
+                    if (outputsOnly.InputItems.Count > 0)
+                    {
+                        var retryResponse = await responseClient.CreateResponseAsync(outputsOnly, ct);
+                        currentResponse = retryResponse.Value;
+                        RecordTokenUsage(currentResponse);
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+                catch (Exception retryEx)
+                {
+                    _logger.LogWarning(retryEx, "Retry also failed — returning partial response");
+                    break;
+                }
             }
         }
 

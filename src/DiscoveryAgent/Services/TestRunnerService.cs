@@ -165,9 +165,26 @@ public class TestRunnerService
                 ConversationId: conversationId,
                 ContextId: request.ContextId);
 
-            agentResponse = await WithRetry(
-                () => handler.HandleAsync(followUpRequest, ct),
-                ct);
+            try
+            {
+                agentResponse = await WithRetry(
+                    () => handler.HandleAsync(followUpRequest, ct),
+                    ct);
+            }
+            catch (Exception ex) when (ex.Message.Contains("400") || ex.Message.Contains("tool output") || ex.Message.Contains("invalid_request"))
+            {
+                // Conversation state is corrupted (unresolved tool calls).
+                // Start a fresh conversation for remaining turns.
+                _logger.LogWarning(ex, "Conversation state corrupted at turn {Turn} — starting fresh conversation", turnNumber);
+                var freshRequest = new ConversationRequest(
+                    UserId: userId,
+                    Message: $"[Continuing from a prior conversation] The respondent said: {respondentReply}",
+                    ContextId: request.ContextId);
+                agentResponse = await WithRetry(
+                    () => handler.HandleAsync(freshRequest, ct),
+                    ct);
+                conversationId = agentResponse.ConversationId;
+            }
             turnNumber++;
 
             UpdateCoverage(coveredIds, agentResponse.ExtractedKnowledgeIds, knowledgeStore, request.ContextId);
