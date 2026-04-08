@@ -72,6 +72,14 @@
   <button onclick="newConversation()">New Chat</button>
 </header>
 
+<!-- Context selection overlay -->
+<div id="contextOverlay" style="display:none;position:absolute;inset:0;background:rgba(255,255,255,0.95);z-index:50;display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px;">
+  <div style="font-size:20px;font-weight:600;color:#1a1a2e;">Select a Discovery Context</div>
+  <div style="font-size:14px;color:#666;max-width:400px;text-align:center;">Multiple contexts are available. Please select one before starting your session.</div>
+  <select id="overlayContextSelect" style="padding:10px 16px;font-size:15px;border:1px solid #ccc;border-radius:8px;min-width:300px;"></select>
+  <button onclick="confirmContext()" style="padding:10px 24px;font-size:14px;font-weight:600;background:#1a1a2e;color:#fff;border:none;border-radius:8px;cursor:pointer;">Start Session</button>
+</div>
+
 <div class="chat-container" id="chat"></div>
 
 <div class="typing" id="typing">
@@ -89,7 +97,7 @@
   <div class="attachments" id="attachments"></div>
   <div class="config-bar">
     <label>User ID: <input id="userId" value="web-user-1"></label>
-    <label>Context: <input id="contextId" value="" placeholder="optional"></label>
+    <label>Context: <select id="contextId"><option value="">Loading...</option></select></label>
     <div class="conv-id" id="convDisplay"></div>
   </div>
 </div>
@@ -114,6 +122,70 @@ if (conversationId) {
   statusEl.textContent = 'Session restored';
   restoreChatHistory();
 }
+
+// ── Context auto-load ─────────────────────────────────
+async function loadContexts() {
+  const select = document.getElementById('contextId');
+  const overlay = document.getElementById('contextOverlay');
+  const overlaySelect = document.getElementById('overlayContextSelect');
+  try {
+    const res = await fetch(`${API_BASE}/api/manage/contexts`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const contexts = await res.json();
+
+    select.innerHTML = '';
+    overlaySelect.innerHTML = '';
+
+    if (contexts.length === 0) {
+      // No contexts — unbounded only
+      select.innerHTML = '<option value="">Unbounded Discovery</option>';
+    } else if (contexts.length === 1) {
+      // Single context — auto-select it, allow unbounded
+      select.innerHTML = `<option value="${esc(contexts[0].contextId)}">${esc(contexts[0].name)}</option>`
+        + '<option value="">Unbounded Discovery</option>';
+    } else {
+      // Multiple contexts — force selection via overlay
+      for (const ctx of contexts) {
+        const opt = `<option value="${esc(ctx.contextId)}">${esc(ctx.name)}</option>`;
+        select.innerHTML += opt;
+        overlaySelect.innerHTML += opt;
+      }
+      select.innerHTML += '<option value="">Unbounded Discovery</option>';
+      overlaySelect.innerHTML += '<option value="">Unbounded Discovery</option>';
+
+      // Show overlay if no conversation in progress
+      if (!conversationId) {
+        overlay.style.display = 'flex';
+        input.disabled = true;
+        sendBtn.disabled = true;
+      }
+    }
+
+    // Restore saved context selection
+    const saved = sessionStorage.getItem('selectedContextId');
+    if (saved !== null) select.value = saved;
+  } catch (e) {
+    select.innerHTML = '<option value="">Unbounded Discovery</option>';
+  }
+}
+
+function confirmContext() {
+  const overlaySelect = document.getElementById('overlayContextSelect');
+  const select = document.getElementById('contextId');
+  select.value = overlaySelect.value;
+  sessionStorage.setItem('selectedContextId', select.value);
+  document.getElementById('contextOverlay').style.display = 'none';
+  input.disabled = false;
+  sendBtn.disabled = false;
+  input.focus();
+}
+
+// Save context selection on change
+document.getElementById('contextId').addEventListener('change', function() {
+  sessionStorage.setItem('selectedContextId', this.value);
+});
+
+loadContexts();
 
 // Auto-resize textarea
 input.addEventListener('input', () => {
@@ -365,12 +437,14 @@ function newConversation() {
   chatHistory = [];
   sessionStorage.removeItem('conversationId');
   sessionStorage.removeItem('chatHistory');
+  sessionStorage.removeItem('selectedContextId');
   chat.innerHTML = '';
   convDisplay.textContent = '';
   statusEl.textContent = 'Ready';
   pendingDocuments.forEach(d => { if (d.thumbUrl) URL.revokeObjectURL(d.thumbUrl); });
   pendingDocuments = [];
   renderAttachments();
+  loadContexts(); // Re-check contexts and show overlay if needed
 }
 </script>
 
