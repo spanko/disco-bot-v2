@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Discovery Agent - Test Harness</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; min-height: 100vh; }
+
+  header { background: #1a1a2e; color: #fff; padding: 16px 24px; display: flex; align-items: center; gap: 16px; }
+  header h1 { font-size: 18px; font-weight: 600; }
+  header .nav { display: flex; gap: 8px; margin-left: auto; }
+  header a { color: rgba(255,255,255,0.7); text-decoration: none; font-size: 13px; padding: 6px 14px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.2); }
+  header a:hover, header a.active { color: #fff; background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.4); }
+
+  .tabs { max-width: 960px; margin: 16px auto 0; padding: 0 16px; display: flex; gap: 4px; border-bottom: 2px solid #e0e0e0; align-items: center; }
+  .tab { padding: 10px 20px; font-size: 14px; cursor: pointer; border: none; background: none; color: #666; border-bottom: 2px solid transparent; margin-bottom: -2px; }
+  .tab:hover { color: #333; }
+  .tab.active { color: #1a1a2e; border-bottom-color: #4a90d9; font-weight: 600; }
+  .status-badge { font-size: 12px; padding: 3px 10px; border-radius: 6px; font-weight: 500; margin-left: auto; }
+  .status-idle { background: #f0f0f0; color: #888; }
+  .status-running { background: #e3f2fd; color: #1565c0; }
+  .status-complete { background: #e8f5e9; color: #2e7d32; }
+  .status-error { background: #fce4ec; color: #c62828; }
+  .status-analyzing { background: #fff3e0; color: #e65100; }
+
+  .panel { display: none; max-width: 960px; margin: 0 auto; padding: 16px; }
+  .panel.active { display: block; }
+
+  /* Config cards */
+  .section-label { font-size: 14px; font-weight: 600; margin-bottom: 8px; color: #222; }
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin-bottom: 20px; }
+  .card-grid-wide { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; margin-bottom: 20px; }
+  .select-card { text-align: left; padding: 10px 12px; cursor: pointer; border: 1px solid #e0e0e0; border-radius: 8px; background: #fff; transition: border-color 0.15s; }
+  .select-card:hover { border-color: #4a90d9; }
+  .select-card.selected { border: 2px solid #4a90d9; }
+  .select-card .card-title { font-size: 13px; font-weight: 600; color: #222; }
+  .select-card .card-desc { font-size: 11px; color: #888; margin-top: 2px; }
+
+  /* Stamp target */
+  .stamp-cards { display: flex; gap: 8px; margin-bottom: 20px; }
+  .stamp-cards .select-card { flex: 1; }
+  .stamp-url-input { margin-top: 8px; display: none; }
+  .stamp-url-input input { width: 100%; border: 1px solid #d0d0d0; border-radius: 6px; padding: 8px 12px; font-size: 13px; }
+  .stamp-url-input input:focus { outline: none; border-color: #4a90d9; box-shadow: 0 0 0 2px rgba(74,144,217,0.2); }
+  .stamp-coming-soon { margin-top: 8px; display: none; padding: 10px 14px; background: #fff3e0; border-radius: 6px; font-size: 12px; color: #e65100; }
+
+  /* Slider */
+  .slider-row { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+  .slider-row label { font-size: 14px; font-weight: 600; }
+  .slider-row input[type=range] { flex: 1; max-width: 200px; }
+  .slider-row .slider-val { font-size: 14px; font-weight: 600; min-width: 24px; }
+  .slider-hint { font-size: 12px; color: #888; margin-top: -12px; margin-bottom: 20px; }
+
+  .btn-primary { background: #4a90d9; color: #fff; border: none; border-radius: 8px; padding: 10px 24px; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .btn-primary:hover { background: #3a7fc0; }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* Watch tab */
+  .metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }
+  .metric-card { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px 14px; }
+  .metric-card .label { font-size: 13px; color: #888; margin-bottom: 4px; }
+  .metric-card .value { font-size: 22px; font-weight: 600; color: #222; }
+  .metric-card .sub { font-size: 12px; color: #aaa; margin-top: 2px; }
+
+  /* Coverage bars */
+  .coverage-bar { margin-bottom: 8px; }
+  .coverage-bar .bar-label { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 3px; }
+  .coverage-bar .bar-label .name { color: #666; }
+  .coverage-bar .bar-label .val { font-weight: 600; color: #222; }
+  .coverage-bar .bar-track { height: 6px; border-radius: 3px; background: #e8e8e8; overflow: hidden; }
+  .coverage-bar .bar-fill { height: 100%; border-radius: 3px; transition: width 0.4s ease; }
+  .bar-green { background: #1D9E75; }
+  .bar-yellow { background: #BA7517; }
+  .bar-red { background: #E24B4A; }
+
+  /* Message area */
+  .message-area { max-height: 400px; overflow-y: auto; padding: 12px; border: 1px solid #e0e0e0; border-radius: 10px; background: #fafafa; margin-bottom: 12px; }
+  .msg-bubble { display: flex; gap: 10px; margin-bottom: 12px; }
+  .msg-bubble.respondent { flex-direction: row-reverse; }
+  .msg-avatar { width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0; margin-top: 2px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; }
+  .msg-avatar.agent { background: #e3f2fd; color: #1565c0; }
+  .msg-avatar.resp { background: #fff3e0; color: #e65100; }
+  .msg-content { max-width: 78%; padding: 8px 12px; border-radius: 8px; border: 1px solid #e8e8e8; font-size: 13px; line-height: 1.6; color: #222; }
+  .msg-bubble.agent .msg-content { background: #fff; }
+  .msg-bubble.respondent .msg-content { background: #f8f8f8; }
+  .msg-meta { font-size: 11px; color: #aaa; margin-bottom: 4px; }
+  .thinking { text-align: center; padding: 8px; font-size: 12px; color: #aaa; }
+
+  /* Run selector */
+  .run-selector { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 12px; }
+  .run-btn { padding: 4px 12px; font-size: 12px; cursor: pointer; border: 1px solid #e0e0e0; border-radius: 6px; background: #fff; color: #333; }
+  .run-btn.active { border: 2px solid #4a90d9; }
+
+  /* Results tab */
+  .results-section { padding: 16px; border-radius: 10px; border: 1px solid #e0e0e0; background: #fff; margin-bottom: 16px; }
+  .results-section h3 { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: #222; }
+  .issue-card { padding: 8px 12px; margin-bottom: 6px; border-radius: 6px; font-size: 13px; border: 1px solid #e8e8e8; }
+  .issue-card.danger { background: #fce4ec; color: #c62828; }
+  .issue-card.success { background: #e8f5e9; color: #2e7d32; }
+  .weak-badge { display: inline-block; font-size: 12px; padding: 4px 10px; border-radius: 6px; background: #fff3e0; color: #e65100; font-weight: 600; margin: 2px; }
+
+  .btn-outline { background: transparent; border: 1px solid #ccc; border-radius: 6px; padding: 10px 20px; font-size: 13px; font-weight: 500; cursor: pointer; color: #333; margin-top: 16px; }
+  .btn-outline:hover { border-color: #4a90d9; color: #4a90d9; }
+
+  .empty-state { text-align: center; padding: 40px; color: #aaa; font-size: 14px; }
+
+  @media (max-width: 640px) {
+    .metric-grid { grid-template-columns: repeat(2, 1fr); }
+    .card-grid { grid-template-columns: 1fr 1fr; }
+    .stamp-cards { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Test Harness</h1>
+  <div class="nav">
+    <a href="index.html">Chat</a>
+    <a href="admin.html">Admin</a>
+    <a href="dashboard.html">Dashboard</a>
+    <a href="test.html" class="active">Test</a>
+  </div>
+</header>
+
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('config')">Configure</button>
+  <button class="tab" onclick="switchTab('watch')">Watch</button>
+  <button class="tab" onclick="switchTab('results')">Results</button>
+  <span class="status-badge status-idle" id="statusBadge">Ready</span>
+</div>
+
+<!-- ========== CONFIGURE TAB ========== -->
+<div class="panel active" id="panel-config">
+  <div class="section-label">Test persona</div>
+  <div class="card-grid" id="personaGrid"></div>
+
+  <div class="section-label">Response mode</div>
+  <div class="card-grid-wide" id="modeGrid"></div>
+
+  <div class="section-label">Target stamp</div>
+  <div class="stamp-cards" id="stampCards"></div>
+  <div class="stamp-url-input" id="stampUrlInput">
+    <input type="text" id="devStampUrl" placeholder="https://your-dev-stamp.azurewebsites.net">
+  </div>
+  <div class="stamp-coming-soon" id="stampComingSoon">Coming soon -- requires management plane to be operational.</div>
+
+  <div class="section-label">Context ID</div>
+  <div style="margin-bottom:20px">
+    <input type="text" id="contextIdInput" value="default" style="border:1px solid #d0d0d0;border-radius:6px;padding:8px 12px;font-size:13px;width:300px;">
+  </div>
+
+  <div class="slider-row">
+    <label>Number of runs</label>
+    <input type="range" min="1" max="10" value="1" id="numRuns" oninput="document.getElementById('numRunsVal').textContent=this.value">
+    <span class="slider-val" id="numRunsVal">1</span>
+  </div>
+  <div class="slider-hint">Multiple runs cycle through personas automatically for broader coverage testing</div>
+
+  <button class="btn-primary" id="runBtn" onclick="startTest()">Run test</button>
+</div>
+
+<!-- ========== WATCH TAB ========== -->
+<div class="panel" id="panel-watch">
+  <div class="metric-grid" id="watchMetrics">
+    <div class="metric-card"><div class="label">Persona</div><div class="value" id="wPersona">--</div></div>
+    <div class="metric-card"><div class="label">Mode</div><div class="value" id="wMode">--</div></div>
+    <div class="metric-card"><div class="label">Turns</div><div class="value" id="wTurns">0</div><div class="sub" id="wTurnsSub"></div></div>
+    <div class="metric-card"><div class="label">Coverage</div><div class="value" id="wCoverage">0%</div><div class="sub" id="wCoverageSub"></div></div>
+  </div>
+
+  <div id="watchCoverageBars"></div>
+
+  <div class="message-area" id="messageArea">
+    <div class="empty-state">Configure and start a test to watch the conversation flow</div>
+  </div>
+
+  <div class="run-selector" id="runSelector" style="display:none"></div>
+</div>
+
+<!-- ========== RESULTS TAB ========== -->
+<div class="panel" id="panel-results">
+  <div id="resultsContent">
+    <div class="empty-state">Run a test first to see results</div>
+  </div>
+</div>
+
+<script>
+// =====================================================================
+// Data
+// =====================================================================
+const PERSONAS = [
+  { id: "exec", name: "Executive sponsor", style: "brief, strategic, time-pressured", depth: "high-level", traits: ["avoids details", "speaks in outcomes", "name-drops stakeholders", "redirects to ROI"] },
+  { id: "mgr", name: "Mid-level manager", style: "cooperative, structured, wants to impress", depth: "moderate detail", traits: ["gives balanced answers", "caveats often", "references team dynamics", "mentions process"] },
+  { id: "ic", name: "Individual contributor", style: "candid, sometimes frustrated, detail-oriented", depth: "deep technical", traits: ["shares pain points freely", "gives specific examples", "may go on tangents", "mentions tooling gaps"] },
+  { id: "new", name: "New hire (< 3 months)", style: "uncertain, deferential, limited context", depth: "surface only", traits: ["says 'I think' or 'I'm not sure' often", "references onboarding gaps", "compares to previous employer", "asks clarifying questions back"] },
+  { id: "skeptic", name: "Skeptical veteran", style: "guarded, tests the agent, challenges premises", depth: "selective", traits: ["pushes back on questions", "gives one-word answers initially", "opens up if trusted", "flags past failed initiatives"] },
+  { id: "eager", name: "Enthusiastic champion", style: "verbose, optimistic, wants to help", depth: "exhaustive", traits: ["over-shares", "rates everything positively", "hard to get honest negatives from", "volunteers for follow-ups"] },
+];
+
+const RESPONSE_MODES = [
+  { id: "realistic", name: "Realistic mix", desc: "Varied lengths, some tangents, occasional 'I don't know'" },
+  { id: "adversarial", name: "Adversarial", desc: "Short answers, pushback, N/A-heavy, tests edge cases" },
+  { id: "golden", name: "Golden path", desc: "Cooperative, detailed answers that should produce full coverage" },
+  { id: "random", name: "Randomized", desc: "Each response randomly varies length, relevance, and cooperation" },
+];
+
+const STAMPS = [
+  { id: "local", label: "Local (current stamp)", desc: "Calls the same API this page is hosted on" },
+  { id: "dev", label: "Dev stamp", desc: "Calls a different stamp's API" },
+  { id: "new", label: "New stamp", desc: "Provision a test stamp, run, tear down" },
+];
+
+const QUESTION_IDS = ["sa-01","sa-02","sa-03","sa-04","eo-01","eo-02","eo-03","eo-04","cp-01","cp-02","cp-03","cp-04","cp-05","cp-06","cm-01","cm-02"];
+const SECTIONS = { "strategy-alignment": [0,1,2,3], "execution-operations": [4,5,6,7], "culture-people": [8,9,10,11,12,13], "change-management": [14,15] };
+const SECTION_NAMES = { "strategy-alignment": "Strategy & Alignment", "execution-operations": "Execution & Operations", "culture-people": "Culture & People", "change-management": "Change Management" };
+
+// =====================================================================
+// State
+// =====================================================================
+let selectedPersona = PERSONAS[0];
+let selectedMode = RESPONSE_MODES[0];
+let selectedStamp = "local";
+let status = "idle";
+let runs = [];       // { messages, coveredIds, persona, mode, totalTurns, conversationId }
+let activeRun = 0;
+
+// =====================================================================
+// Tab switching
+// =====================================================================
+function switchTab(tabId) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelector('.tab[onclick*="' + tabId + '"]').classList.add('active');
+  document.getElementById('panel-' + tabId).classList.add('active');
+}
+
+// =====================================================================
+// Init UI
+// =====================================================================
+function renderPersonaGrid() {
+  const grid = document.getElementById('personaGrid');
+  grid.innerHTML = PERSONAS.map(p =>
+    '<button class="select-card' + (selectedPersona.id === p.id ? ' selected' : '') + '" onclick="selectPersona(\'' + p.id + '\')">' +
+    '<div class="card-title">' + p.name + '</div>' +
+    '<div class="card-desc">' + p.style + '</div></button>'
+  ).join('');
+}
+
+function renderModeGrid() {
+  const grid = document.getElementById('modeGrid');
+  grid.innerHTML = RESPONSE_MODES.map(m =>
+    '<button class="select-card' + (selectedMode.id === m.id ? ' selected' : '') + '" onclick="selectMode(\'' + m.id + '\')">' +
+    '<div class="card-title">' + m.name + '</div>' +
+    '<div class="card-desc">' + m.desc + '</div></button>'
+  ).join('');
+}
+
+function renderStampCards() {
+  const container = document.getElementById('stampCards');
+  container.innerHTML = STAMPS.map(s =>
+    '<button class="select-card' + (selectedStamp === s.id ? ' selected' : '') + '" onclick="selectStamp(\'' + s.id + '\')">' +
+    '<div class="card-title">' + s.label + '</div>' +
+    '<div class="card-desc">' + s.desc + '</div></button>'
+  ).join('');
+}
+
+function selectPersona(id) {
+  selectedPersona = PERSONAS.find(p => p.id === id);
+  renderPersonaGrid();
+}
+
+function selectMode(id) {
+  selectedMode = RESPONSE_MODES.find(m => m.id === id);
+  renderModeGrid();
+}
+
+function selectStamp(id) {
+  selectedStamp = id;
+  renderStampCards();
+  document.getElementById('stampUrlInput').style.display = id === 'dev' ? 'block' : 'none';
+  document.getElementById('stampComingSoon').style.display = id === 'new' ? 'block' : 'none';
+}
+
+function setStatus(s) {
+  status = s;
+  const badge = document.getElementById('statusBadge');
+  const map = { idle: ['Ready','status-idle'], running: ['Running','status-running'], complete: ['Complete','status-complete'], error: ['Error','status-error'], analyzing: ['Analyzing','status-analyzing'] };
+  const [label, cls] = map[s] || map.idle;
+  badge.className = 'status-badge ' + cls;
+  badge.textContent = label;
+}
+
+// =====================================================================
+// Start test
+// =====================================================================
+async function startTest() {
+  if (selectedStamp === 'new') { alert('New stamp provisioning is not yet available.'); return; }
+
+  const numRuns = parseInt(document.getElementById('numRuns').value);
+  const contextId = document.getElementById('contextIdInput').value || 'default';
+
+  runs = [];
+  activeRun = 0;
+  setStatus('running');
+  switchTab('watch');
+  document.getElementById('runBtn').disabled = true;
+
+  const baseUrl = selectedStamp === 'dev' ? document.getElementById('devStampUrl').value.replace(/\/$/, '') : '';
+
+  if (numRuns === 1) {
+    const run = { messages: [], coveredIds: new Set(), persona: selectedPersona, mode: selectedMode.id, totalTurns: 0, conversationId: '' };
+    runs.push(run);
+    renderWatch();
+    await executeRun(run, baseUrl, contextId);
+  } else {
+    for (let i = 0; i < numRuns; i++) {
+      const p = PERSONAS[i % PERSONAS.length];
+      const m = selectedMode;
+      runs.push({ messages: [], coveredIds: new Set(), persona: p, mode: m.id, totalTurns: 0, conversationId: '' });
+    }
+    renderWatch();
+    for (let i = 0; i < numRuns; i++) {
+      activeRun = i;
+      renderWatch();
+      await executeRun(runs[i], baseUrl, contextId);
+    }
+  }
+
+  setStatus('analyzing');
+  setTimeout(() => {
+    renderResults();
+    setStatus('complete');
+    switchTab('results');
+    document.getElementById('runBtn').disabled = false;
+  }, 500);
+}
+
+async function executeRun(run, baseUrl, contextId) {
+  const url = baseUrl + '/api/test/run';
+  const body = JSON.stringify({
+    contextId: contextId,
+    persona: { id: run.persona.id, name: run.persona.name, style: run.persona.style, depth: run.persona.depth, traits: run.persona.traits },
+    responseMode: run.mode,
+    maxTurns: 60,
+  });
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: body,
+    });
+
+    if (!response.ok) {
+      throw new Error('HTTP ' + response.status + ': ' + await response.text());
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // keep incomplete line
+
+      let eventType = '';
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          eventType = line.substring(7).trim();
+        } else if (line.startsWith('data: ')) {
+          const data = JSON.parse(line.substring(6));
+          handleSSEEvent(run, eventType, data);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Test run error:', err);
+    run.messages.push({ role: 'agent', content: '[Error: ' + err.message + ']' });
+    setStatus('error');
+    document.getElementById('runBtn').disabled = false;
+  }
+}
+
+function handleSSEEvent(run, eventType, data) {
+  if (eventType === 'turn' || data.type === 'turn') {
+    run.messages.push({ role: data.role, content: data.content, turn: data.turnNumber });
+    run.totalTurns = data.turnNumber;
+    if (data.coveredQuestionIds) {
+      data.coveredQuestionIds.forEach(id => run.coveredIds.add(id));
+    }
+    renderWatch();
+    scrollMessages();
+  } else if (eventType === 'complete' || data.type === 'complete') {
+    run.totalTurns = data.totalTurns;
+    run.conversationId = data.conversationId;
+    if (data.coveredQuestionIds) {
+      data.coveredQuestionIds.forEach(id => run.coveredIds.add(id));
+    }
+    renderWatch();
+  }
+}
+
+// =====================================================================
+// Render Watch tab
+// =====================================================================
+function renderWatch() {
+  const run = runs[activeRun];
+  if (!run) return;
+
+  document.getElementById('wPersona').textContent = run.persona.name;
+  document.getElementById('wMode').textContent = run.mode;
+  document.getElementById('wTurns').textContent = run.messages.length;
+  document.getElementById('wTurnsSub').textContent = '';
+
+  const covCount = run.coveredIds.size;
+  const total = QUESTION_IDS.length;
+  const pct = total > 0 ? Math.round(covCount / total * 100) : 0;
+  document.getElementById('wCoverage').textContent = covCount + '/' + total;
+  document.getElementById('wCoverageSub').textContent = pct + '%';
+
+  // Coverage bars
+  const barsDiv = document.getElementById('watchCoverageBars');
+  barsDiv.innerHTML = Object.entries(SECTIONS).map(([sec, indices]) => {
+    const covered = indices.filter(i => run.coveredIds.has(QUESTION_IDS[i])).length;
+    const t = indices.length;
+    const p = t > 0 ? Math.round(covered / t * 100) : 0;
+    const colorClass = p === 100 ? 'bar-green' : p >= 50 ? 'bar-yellow' : 'bar-red';
+    return '<div class="coverage-bar"><div class="bar-label"><span class="name">' + SECTION_NAMES[sec] + '</span><span class="val">' + covered + '/' + t + ' (' + p + '%)</span></div><div class="bar-track"><div class="bar-fill ' + colorClass + '" style="width:' + p + '%"></div></div></div>';
+  }).join('');
+
+  // Messages
+  const area = document.getElementById('messageArea');
+  if (run.messages.length === 0) {
+    area.innerHTML = '<div class="empty-state">Waiting for conversation to begin...</div>';
+  } else {
+    area.innerHTML = run.messages.map((m, i) => {
+      const isAgent = m.role === 'agent';
+      const cls = isAgent ? 'agent' : 'respondent';
+      const avatarCls = isAgent ? 'agent' : 'resp';
+      const label = isAgent ? 'Discovery agent' : 'Test respondent';
+      const letter = isAgent ? 'A' : 'R';
+      return '<div class="msg-bubble ' + cls + '"><div class="msg-avatar ' + avatarCls + '">' + letter + '</div><div class="msg-content"><div class="msg-meta">' + label + ' &middot; turn ' + (m.turn || i + 1) + '</div>' + escapeHtml(m.content) + '</div></div>';
+    }).join('');
+
+    if (status === 'running') {
+      area.innerHTML += '<div class="thinking">Agent is thinking...</div>';
+    }
+  }
+
+  // Run selector
+  if (runs.length > 1) {
+    const sel = document.getElementById('runSelector');
+    sel.style.display = 'flex';
+    sel.innerHTML = runs.map((r, i) =>
+      '<button class="run-btn' + (activeRun === i ? ' active' : '') + '" onclick="selectRun(' + i + ')">Run ' + (i + 1) + ': ' + r.persona.name.split(' ')[0] + '</button>'
+    ).join('');
+  } else {
+    document.getElementById('runSelector').style.display = 'none';
+  }
+}
+
+function selectRun(i) {
+  activeRun = i;
+  renderWatch();
+}
+
+function scrollMessages() {
+  const area = document.getElementById('messageArea');
+  area.scrollTop = area.scrollHeight;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// =====================================================================
+// Render Results tab
+// =====================================================================
+function renderResults() {
+  const analysis = generateAnalysis(runs);
+  const container = document.getElementById('resultsContent');
+
+  let html = '';
+
+  // Metric cards
+  html += '<div class="metric-grid">';
+  html += '<div class="metric-card"><div class="label">Runs completed</div><div class="value">' + runs.length + '</div></div>';
+  html += '<div class="metric-card"><div class="label">Avg. coverage</div><div class="value">' + analysis.avgPct + '%</div><div class="sub">' + (analysis.avgPct >= 90 ? 'Strong' : analysis.avgPct >= 70 ? 'Acceptable' : 'Needs work') + '</div></div>';
+  html += '<div class="metric-card"><div class="label">Avg. turns</div><div class="value">' + analysis.avgTurns + '</div><div class="sub">' + (analysis.avgTurns > 60 ? 'May cause fatigue' : 'Good pacing') + '</div></div>';
+  html += '<div class="metric-card"><div class="label">Weak questions</div><div class="value">' + analysis.weakQuestions.length + '</div><div class="sub">' + (analysis.weakQuestions.length === 0 ? 'None found' : 'See below') + '</div></div>';
+  html += '</div>';
+
+  // Coverage by run
+  html += '<div class="results-section"><h3>Coverage by run</h3>';
+  runs.forEach((r, i) => {
+    const cov = r.coveredIds.size;
+    const total = QUESTION_IDS.length;
+    const p = total > 0 ? Math.round(cov / total * 100) : 0;
+    const colorClass = p === 100 ? 'bar-green' : p >= 50 ? 'bar-yellow' : 'bar-red';
+    html += '<div class="coverage-bar"><div class="bar-label"><span class="name">Run ' + (i + 1) + ': ' + r.persona.name + ' (' + r.mode + ')</span><span class="val">' + cov + '/' + total + ' (' + p + '%)</span></div><div class="bar-track"><div class="bar-fill ' + colorClass + '" style="width:' + p + '%"></div></div></div>';
+  });
+  html += '</div>';
+
+  // Issues
+  html += '<div class="results-section"><h3>Issues detected</h3>';
+  analysis.issues.forEach(issue => {
+    html += '<div class="issue-card danger">' + escapeHtml(issue) + '</div>';
+  });
+  html += '</div>';
+
+  // Suggestions
+  html += '<div class="results-section"><h3>Recommended agentInstructions changes</h3>';
+  analysis.suggestions.forEach(s => {
+    html += '<div class="issue-card success">' + escapeHtml(s) + '</div>';
+  });
+  html += '</div>';
+
+  // Weak questions
+  if (analysis.weakQuestions.length > 0) {
+    html += '<div class="results-section"><h3>Consistently missed questions</h3><div>';
+    analysis.weakQuestions.forEach(q => {
+      html += '<span class="weak-badge">' + q + '</span>';
+    });
+    html += '</div></div>';
+  }
+
+  // Send to Claude button
+  html += '<button class="btn-outline" onclick="copyResultsToClipboard()">Copy results to clipboard for Claude</button>';
+
+  container.innerHTML = html;
+}
+
+function generateAnalysis(runs) {
+  const issues = [];
+  const suggestions = [];
+
+  const avgCoverage = runs.reduce((s, r) => s + r.coveredIds.size, 0) / runs.length;
+  const avgPct = Math.round((avgCoverage / QUESTION_IDS.length) * 100);
+
+  if (avgPct < 70) {
+    issues.push('Average coverage is only ' + avgPct + '% across ' + runs.length + ' runs. The agent is consistently missing questions.');
+    suggestions.push('Add explicit instructions in agentInstructions to track which question IDs have been addressed and flag uncovered ones before wrapping a section.');
+  }
+
+  const perQuestion = {};
+  QUESTION_IDS.forEach(q => { perQuestion[q] = 0; });
+  runs.forEach(r => r.coveredIds.forEach(q => { perQuestion[q]++; }));
+  const weakQuestions = Object.entries(perQuestion).filter(([, c]) => c < runs.length * 0.5);
+  if (weakQuestions.length > 0) {
+    issues.push(weakQuestions.length + ' questions were covered in fewer than half of runs: ' + weakQuestions.map(([q]) => q).join(', ') + '.');
+    suggestions.push("For consistently missed questions, add explicit probing prompts in the agentInstructions keyed to those question IDs.");
+  }
+
+  const adversarialRuns = runs.filter(r => r.mode === 'adversarial');
+  if (adversarialRuns.length > 0) {
+    const advAvg = Math.round(adversarialRuns.reduce((s, r) => s + r.coveredIds.size, 0) / adversarialRuns.length);
+    if (advAvg < QUESTION_IDS.length * 0.6) {
+      issues.push('Adversarial runs averaged only ' + advAvg + '/' + QUESTION_IDS.length + ' coverage. The agent may not be probing enough when respondents give short or dismissive answers.');
+      suggestions.push("Add instructions for handling resistant respondents: probe once with a reframed question before accepting short answers.");
+    }
+  }
+
+  const avgTurns = Math.round(runs.reduce((s, r) => s + r.messages.length, 0) / runs.length);
+  if (avgTurns < 20) {
+    issues.push('Average conversation length is only ' + avgTurns + ' turns. The agent may be rushing through sections.');
+    suggestions.push("Increase the minimum turn guidance in agentInstructions to 7-10 turns per theme.");
+  } else if (avgTurns > 60) {
+    issues.push('Average conversation length is ' + avgTurns + ' turns, which may cause respondent fatigue.');
+    suggestions.push("Add pacing guidance: consolidate remaining questions into broader prompts after 50 turns.");
+  }
+
+  if (issues.length === 0) {
+    issues.push('No significant issues detected across test runs. Coverage is strong and consistent.');
+    suggestions.push('Consider running adversarial-mode tests to stress-test edge cases.');
+  }
+
+  return { issues, suggestions, avgPct, avgTurns, weakQuestions: weakQuestions.map(([q]) => q) };
+}
+
+function copyResultsToClipboard() {
+  const analysis = generateAnalysis(runs);
+  const report = {
+    timestamp: new Date().toISOString(),
+    runs: runs.map(r => ({
+      persona: r.persona.name,
+      mode: r.mode,
+      coverage: r.coveredIds.size,
+      totalQuestions: QUESTION_IDS.length,
+      coveredIds: [...r.coveredIds],
+      totalTurns: r.totalTurns,
+    })),
+    analysis,
+  };
+  const text = 'Here are the test harness results. Please review and suggest specific changes to the agentInstructions:\n\n' + JSON.stringify(report, null, 2);
+  navigator.clipboard.writeText(text).then(() => {
+    alert('Results copied to clipboard. Paste into Claude for analysis.');
+  }).catch(() => {
+    // Fallback
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    alert('Results copied to clipboard.');
+  });
+}
+
+// =====================================================================
+// Init
+// =====================================================================
+renderPersonaGrid();
+renderModeGrid();
+renderStampCards();
+</script>
+</body>
+</html>

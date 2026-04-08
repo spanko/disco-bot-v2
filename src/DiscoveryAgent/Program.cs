@@ -45,6 +45,8 @@ builder.Services.AddSingleton(_ =>
 
 // ── Application Services (mode-dependent) ────────────────────────
 builder.Services.AddSingleton<IAgentManager, AgentManager>();
+builder.Services.AddSingleton<TestRunnerService>();
+builder.Services.AddSingleton<CoverageAnalyzer>();
 
 if (settings.IsLightweight)
 {
@@ -612,6 +614,126 @@ app.MapGet("/api/documents/{documentId}/content", async (
 });
 
 } // end if (!settings.IsLightweight) — document upload routes
+
+// =====================================================================
+// Test Harness API
+// =====================================================================
+
+app.MapPost("/api/test/run", async (
+    HttpRequest req,
+    HttpResponse res,
+    IServiceProvider sp,
+    TestRunnerService testRunner,
+    IKnowledgeStore knowledgeStore,
+    ILogger<TestRunnerService> log,
+    CancellationToken ct) =>
+{
+    var request = await JsonSerializer.DeserializeAsync<TestRunRequest>(req.Body, jsonOpts, ct);
+    if (request is null)
+        return Results.BadRequest(new { error = "Invalid request body" });
+
+    // SSE streaming response
+    res.Headers.ContentType = "text/event-stream";
+    res.Headers.CacheControl = "no-cache";
+    res.Headers.Connection = "keep-alive";
+
+    // Create a scoped handler for this test run
+    using var scope = sp.CreateScope();
+    var handler = scope.ServiceProvider.GetRequiredService<IConversationHandler>();
+
+    await foreach (var evt in testRunner.RunAsync(request, handler, knowledgeStore, ct))
+    {
+        var json = JsonSerializer.Serialize(evt, jsonOpts);
+        var eventType = evt is TestCompleteEvent ? "complete" : "turn";
+        await res.WriteAsync($"event: {eventType}\ndata: {json}\n\n", ct);
+        await res.Body.FlushAsync(ct);
+    }
+
+    return Results.Empty;
+});
+
+app.MapGet("/api/test/coverage/{contextId}", async (
+    string contextId,
+    CoverageAnalyzer coverageAnalyzer) =>
+{
+    var result = await coverageAnalyzer.AnalyzeAsync(contextId);
+    return Results.Ok(result);
+});
+
+app.MapPost("/api/test/batch", async (
+    HttpRequest req,
+    HttpResponse res,
+    IServiceProvider sp,
+    TestRunnerService testRunner,
+    IKnowledgeStore knowledgeStore,
+    ILogger<TestRunnerService> log,
+    CancellationToken ct) =>
+{
+    var body = await JsonSerializer.DeserializeAsync<JsonElement>(req.Body, jsonOpts, ct);
+
+    var contextId = body.GetProperty("contextId").GetString() ?? "";
+    var maxTurns = body.TryGetProperty("maxTurns", out var mt) ? mt.GetInt32() : 60;
+    var runsArray = body.GetProperty("runs");
+
+    // SSE streaming response for batch
+    res.Headers.ContentType = "text/event-stream";
+    res.Headers.CacheControl = "no-cache";
+    res.Headers.Connection = "keep-alive";
+
+    int runIndex = 0;
+    foreach (var runDef in runsArray.EnumerateArray())
+    {
+        var personaId = runDef.GetProperty("persona").GetString() ?? "";
+        var responseMode = runDef.GetProperty("responseMode").GetString() ?? "realistic";
+
+        var persona = ResolvePersona(personaId);
+        var runRequest = new TestRunRequest
+        {
+            ContextId = contextId,
+            Persona = persona,
+            ResponseMode = responseMode,
+            MaxTurns = maxTurns,
+        };
+
+        // Emit run start event
+        var startJson = JsonSerializer.Serialize(new { type = "run_start", runIndex, persona = persona.Name, responseMode }, jsonOpts);
+        await res.WriteAsync($"event: run_start\ndata: {startJson}\n\n", ct);
+        await res.Body.FlushAsync(ct);
+
+        using var scope = sp.CreateScope();
+        var handler = scope.ServiceProvider.GetRequiredService<IConversationHandler>();
+
+        await foreach (var evt in testRunner.RunAsync(runRequest, handler, knowledgeStore, ct))
+        {
+            var json = JsonSerializer.Serialize(evt, jsonOpts);
+            var eventType = evt is TestCompleteEvent ? "run_complete" : "turn";
+            await res.WriteAsync($"event: {eventType}\ndata: {json}\n\n", ct);
+            await res.Body.FlushAsync(ct);
+        }
+
+        runIndex++;
+    }
+
+    var doneJson = JsonSerializer.Serialize(new { type = "batch_complete", totalRuns = runIndex }, jsonOpts);
+    await res.WriteAsync($"event: batch_complete\ndata: {doneJson}\n\n", ct);
+    await res.Body.FlushAsync(ct);
+
+    return Results.Empty;
+});
+
+static TestPersona ResolvePersona(string personaId)
+{
+    return personaId switch
+    {
+        "exec" => new TestPersona { Id = "exec", Name = "Executive sponsor", Style = "brief, strategic, time-pressured", Depth = "high-level", Traits = ["avoids details", "speaks in outcomes", "name-drops stakeholders", "redirects to ROI"] },
+        "mgr" => new TestPersona { Id = "mgr", Name = "Mid-level manager", Style = "cooperative, structured, wants to impress", Depth = "moderate detail", Traits = ["gives balanced answers", "caveats often", "references team dynamics", "mentions process"] },
+        "ic" => new TestPersona { Id = "ic", Name = "Individual contributor", Style = "candid, sometimes frustrated, detail-oriented", Depth = "deep technical", Traits = ["shares pain points freely", "gives specific examples", "may go on tangents", "mentions tooling gaps"] },
+        "new" => new TestPersona { Id = "new", Name = "New hire (< 3 months)", Style = "uncertain, deferential, limited context", Depth = "surface only", Traits = ["says 'I think' or 'I'm not sure' often", "references onboarding gaps", "compares to previous employer", "asks clarifying questions back"] },
+        "skeptic" => new TestPersona { Id = "skeptic", Name = "Skeptical veteran", Style = "guarded, tests the agent, challenges premises", Depth = "selective", Traits = ["pushes back on questions", "gives one-word answers initially", "opens up if trusted", "flags past failed initiatives"] },
+        "eager" => new TestPersona { Id = "eager", Name = "Enthusiastic champion", Style = "verbose, optimistic, wants to help", Depth = "exhaustive", Traits = ["over-shares", "rates everything positively", "hard to get honest negatives from", "volunteers for follow-ups"] },
+        _ => new TestPersona { Id = personaId, Name = personaId, Style = "cooperative", Depth = "moderate", Traits = ["general respondent"] },
+    };
+}
 
 // ── Fallback: serve index.html for SPA-style routing ────────────
 app.MapFallbackToFile("index.html");
