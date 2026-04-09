@@ -10,10 +10,10 @@ on:
   workflow_dispatch:
 
 env:
-  ACR_NAME: discodevacrvjnr3y
+  ACR_NAME: ${{ vars.ACR_NAME }}
   IMAGE_NAME: management-plane
-  ACA_NAME: disco-mgmt-app
-  RESOURCE_GROUP: discovery-management
+  ACA_NAME: ${{ vars.MGMT_ACA_NAME }}
+  RESOURCE_GROUP: ${{ vars.MGMT_RESOURCE_GROUP }}
 
 jobs:
   build-and-deploy:
@@ -23,6 +23,12 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+
+      - name: Validate configuration
+        run: |
+          : "${ACR_NAME:?Set ACR_NAME in repository variables}"
+          : "${ACA_NAME:?Set MGMT_ACA_NAME in repository variables}"
+          : "${RESOURCE_GROUP:?Set MGMT_RESOURCE_GROUP in repository variables}"
 
       - name: Azure Login (workload identity)
         uses: azure/login@v2

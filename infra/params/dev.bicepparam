@@ -1,9 +1,11 @@
 using '../main.bicep'
 
+// Dev environment — fill in deployerObjectId before deploying
+// Get your ID: az ad signed-in-user show --query id -o tsv
 param prefix = 'disco'
 param suffix = 'dev'
 param primaryModelName = 'gpt-4o'
-param deployerObjectId = 'd9a4dcc0-50de-4c43-b46b-4d81233e3b1b'
+param deployerObjectId = '' // REQUIRED: your Azure AD Object ID
 param cosmosConsistency = 'Session'
 param tags = {
   project: 'discovery-bot-v2'

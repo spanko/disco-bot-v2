@@ -5,10 +5,8 @@ obj/
 *.suo
 .vs/
 
-## Azure Functions
+## Azure
 local.settings.json
-
-## azd
 .azure/
 
 ## IDE
@@ -19,7 +17,7 @@ local.settings.json
 .DS_Store
 Thumbs.db
 
-## Leaked config (func azure functionapp fetch-app-settings output)
+## Leaked config
 settings.json
 
 ## Build artifacts
@@ -31,7 +29,15 @@ publish.zip
 deploy.zip
 publish-profile.xml
 exceptions.json
+
+## Compiled ARM JSON (regenerate with deploy/compile-bicep.sh)
 infra/main.json
+infra/management-plane.json
+
+## Deploy environment files (contain personal Object IDs, subscription IDs)
+deploy/params/*.env
+!deploy/params/template.env
+deploy/params/*.outputs
 
 ## Word lock files
 ~$*

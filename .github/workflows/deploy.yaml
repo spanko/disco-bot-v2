@@ -3,13 +3,17 @@ name: Build and Deploy
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+      - 'deploy/**'
   workflow_dispatch:
 
 env:
-  ACR_NAME: discodevacrvjnr3y
+  ACR_NAME: ${{ vars.ACR_NAME }}
   IMAGE_NAME: discovery-bot
-  ACA_NAME: discodev-app-vjnr3y
-  RESOURCE_GROUP: discovery-dev
+  ACA_NAME: ${{ vars.ACA_NAME }}
+  RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
 
 jobs:
   build-and-deploy:
@@ -19,6 +23,12 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+
+      - name: Validate configuration
+        run: |
+          : "${ACR_NAME:?Set ACR_NAME in repository variables}"
+          : "${ACA_NAME:?Set ACA_NAME in repository variables}"
+          : "${RESOURCE_GROUP:?Set RESOURCE_GROUP in repository variables}"
 
       - name: Azure Login (workload identity)
         uses: azure/login@v2
@@ -41,3 +51,22 @@ jobs:
             --name $ACA_NAME \
             --resource-group $RESOURCE_GROUP \
             --image $ACR_NAME.azurecr.io/$IMAGE_NAME:${{ github.sha }}
+
+      - name: Verify health
+        run: |
+          FQDN=$(az containerapp show \
+            --name $ACA_NAME \
+            --resource-group $RESOURCE_GROUP \
+            --query "properties.configuration.ingress.fqdn" -o tsv)
+          
+          for i in $(seq 1 12); do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://${FQDN}/health" || echo "000")
+            if [ "$CODE" = "200" ]; then
+              echo "✅ Health check passed"
+              exit 0
+            fi
+            echo "Waiting... (attempt $i, status: $CODE)"
+            sleep 10
+          done
+          echo "⚠️ Health check did not pass within 2 minutes"
+          exit 1

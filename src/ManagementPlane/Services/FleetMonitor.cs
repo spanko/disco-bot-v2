@@ -32,7 +32,8 @@ public class FleetMonitor : BackgroundService
         _armClient = armClient;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
-        _sourceAcrName = Environment.GetEnvironmentVariable("SOURCE_ACR_NAME") ?? "discodevacrvjnr3y";
+        _sourceAcrName = Environment.GetEnvironmentVariable("SOURCE_ACR_NAME")
+            ?? throw new InvalidOperationException("SOURCE_ACR_NAME environment variable is required");
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
