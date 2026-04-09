@@ -1,0 +1,141 @@
+# =============================================================================
+# Azure DevOps Pipeline — Discovery Bot v2
+#
+# Mirrors the GitHub Actions deploy workflow but uses ADO service connections
+# and variable groups. Drop this file into the repo root.
+#
+# Prerequisites:
+#   1. Create an Azure service connection named 'disco-bot-azure' (workload identity federation)
+#   2. Create a variable group named 'disco-bot-<env>' with these variables:
+#      - ACR_NAME, CONTAINER_APP_NAME, RESOURCE_GROUP
+#      - (these come from your deploy/params/<env>.outputs file)
+# =============================================================================
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    exclude:
+      - '*.md'
+      - docs/**
+      - deploy/**
+      - .github/**
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+parameters:
+  - name: environment
+    displayName: 'Target Environment'
+    type: string
+    default: 'dev'
+    values:
+      - dev
+      - staging
+      - prod
+
+variables:
+  - group: 'disco-bot-${{ parameters.environment }}'
+  - name: IMAGE_NAME
+    value: 'discovery-bot'
+
+stages:
+  - stage: Build
+    displayName: 'Build & Push Image'
+    jobs:
+      - job: BuildAndPush
+        displayName: 'ACR Build'
+        steps:
+          - task: AzureCLI@2
+            displayName: 'Build image via ACR Tasks'
+            inputs:
+              azureSubscription: 'disco-bot-azure'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                set -euo pipefail
+                IMAGE_TAG=$(Build.SourceVersion)
+                echo "##vso[task.setvariable variable=IMAGE_TAG;isOutput=true]${IMAGE_TAG}"
+                
+                az acr build \
+                  --registry $(ACR_NAME) \
+                  --image $(IMAGE_NAME):${IMAGE_TAG} \
+                  --image $(IMAGE_NAME):latest \
+                  .
+            name: build
+
+  - stage: Deploy
+    displayName: 'Deploy to ACA'
+    dependsOn: Build
+    condition: succeeded()
+    jobs:
+      - deployment: DeployToACA
+        displayName: 'Update Container App'
+        environment: 'disco-bot-${{ parameters.environment }}'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureCLI@2
+                  displayName: 'Update Container App'
+                  inputs:
+                    azureSubscription: 'disco-bot-azure'
+                    scriptType: 'bash'
+                    scriptLocation: 'inlineScript'
+                    inlineScript: |
+                      set -euo pipefail
+                      IMAGE_TAG=$(Build.SourceVersion)
+                      
+                      az containerapp update \
+                        --name $(CONTAINER_APP_NAME) \
+                        --resource-group $(RESOURCE_GROUP) \
+                        --image $(ACR_NAME).azurecr.io/$(IMAGE_NAME):${IMAGE_TAG}
+
+  - stage: Verify
+    displayName: 'Smoke Test'
+    dependsOn: Deploy
+    condition: succeeded()
+    jobs:
+      - job: HealthCheck
+        displayName: 'Health Check'
+        steps:
+          - task: AzureCLI@2
+            displayName: 'Verify deployment health'
+            inputs:
+              azureSubscription: 'disco-bot-azure'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                set -euo pipefail
+                
+                FQDN=$(az containerapp show \
+                  --name $(CONTAINER_APP_NAME) \
+                  --resource-group $(RESOURCE_GROUP) \
+                  --query "properties.configuration.ingress.fqdn" -o tsv)
+                
+                echo "Checking https://${FQDN}/health ..."
+                
+                MAX_WAIT=90
+                ELAPSED=0
+                while [[ $ELAPSED -lt $MAX_WAIT ]]; do
+                  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://${FQDN}/health" || echo "000")
+                  if [[ "$HTTP_CODE" == "200" ]]; then
+                    echo "✅ Health check passed"
+                    
+                    # Check readiness too
+                    READY_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://${FQDN}/health/ready" || echo "000")
+                    if [[ "$READY_CODE" == "200" ]]; then
+                      echo "✅ Readiness check passed"
+                    else
+                      echo "⚠️ Readiness check returned ${READY_CODE} (may still be initializing)"
+                    fi
+                    exit 0
+                  fi
+                  echo "Waiting... (${ELAPSED}s, status: ${HTTP_CODE})"
+                  sleep 10
+                  ELAPSED=$((ELAPSED + 10))
+                done
+                
+                echo "❌ Health check did not pass within ${MAX_WAIT}s"
+                exit 1
