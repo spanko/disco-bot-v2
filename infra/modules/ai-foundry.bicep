@@ -35,6 +35,8 @@ resource account 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
     allowProjectManagement: true
     disableLocalAuth: false
     customSubDomainName: accountName
+    // Note: If deployment fails with "soft-deleted" error, purge first:
+    // az cognitiveservices account purge --name <name> --resource-group <rg> --location <loc>
   }
 }
 
