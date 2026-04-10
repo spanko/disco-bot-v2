@@ -132,6 +132,40 @@ public class FleetMonitor : BackgroundService
             var state = latestDeployment.Data.Properties.ProvisioningState?.ToString();
             _logger.LogInformation("Deployment status for {StampId}: {State}", stamp.StampId, state);
 
+            // Collect sub-deployment progress
+            var steps = new Dictionary<string, string>();
+            try
+            {
+                await foreach (var sub in rg.GetArmDeployments().GetAllAsync())
+                {
+                    if (sub.Data.Name.StartsWith("stamp-") || sub.Data.Name.StartsWith("Failure-")) continue;
+                    var subState = sub.Data.Properties.ProvisioningState?.ToString() ?? "Unknown";
+                    // Friendly names
+                    var friendly = sub.Data.Name switch
+                    {
+                        "deploy-cosmos" => "Cosmos DB",
+                        "deploy-storage" => "Storage",
+                        "deploy-ai-foundry" => "AI Foundry",
+                        "deploy-ai-search" => "AI Search",
+                        "deploy-appinsights" => "App Insights",
+                        "deploy-container-app" => "Container App",
+                        "deploy-rbac" => "Security (RBAC)",
+                        _ => sub.Data.Name,
+                    };
+                    steps[friendly] = subState;
+                }
+                // Add image import step
+                if (state == "Succeeded" && !steps.ContainsKey("Bot Image"))
+                    steps["Bot Image"] = "Pending";
+
+                var updated = stamp with { ProvisioningSteps = steps };
+                await _stampManager.UpdateStampAsync(updated);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Could not read sub-deployments for {StampId}", stamp.StampId);
+            }
+
             if (state == "Succeeded")
             {
                 // Extract outputs from deployment (ARM mangles key casing)

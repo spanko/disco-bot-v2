@@ -38,6 +38,7 @@ public record Stamp
     // Status
     public StampStatus Status { get; init; } = StampStatus.Provisioning;
     public string? LastError { get; init; }
+    public Dictionary<string, string>? ProvisioningSteps { get; init; }
     public DateTime CreatedAt { get; init; } = DateTime.UtcNow;
     public DateTime? LastHealthCheck { get; init; }
     public string? HealthStatus { get; init; }

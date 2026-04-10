@@ -585,6 +585,7 @@ function renderStamps(stamps) {
           <span class="dot"></span>
           ${esc(s.status)}
         </span>
+        ${s.status === 'Provisioning' && s.provisioningSteps ? renderSteps(s.provisioningSteps) : ''}
       </td>
       <td><span class="mode-tag">${esc(s.conversationMode)}</span></td>
       <td><span class="mode-tag">${esc(s.authMode)}</span></td>
@@ -694,6 +695,17 @@ function showToast(msg, type = 'success') {
 }
 
 // ── Helpers ─────────────────────────────────────────
+function renderSteps(steps) {
+  if (!steps || typeof steps !== 'object') return '';
+  const icons = { Succeeded: '\u2705', Running: '\u23F3', Failed: '\u274C', Pending: '\u23F8' };
+  const entries = Object.entries(steps);
+  if (!entries.length) return '';
+  return '<div style="margin-top:6px;font-size:11px;line-height:1.6">' +
+    entries.map(([name, state]) =>
+      `<div>${icons[state] || '\u2B1C'} ${esc(name)}</div>`
+    ).join('') + '</div>';
+}
+
 function esc(s) {
   if (!s) return '';
   const d = document.createElement('div');
