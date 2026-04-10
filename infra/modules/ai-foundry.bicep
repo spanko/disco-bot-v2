@@ -23,7 +23,7 @@ param modelSku string = 'Standard'
 param modelCapacity int = 10
 
 // ── AI Services Account (Foundry Hub) ──────────────────────────
-resource account 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
+resource account 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
   name: accountName
   location: location
   tags: tags
@@ -50,7 +50,7 @@ resource project 'Microsoft.CognitiveServices/accounts/projects@2025-06-01' = {
 }
 
 // ── Model Deployment ───────────────────────────────────────────
-resource modelDeploy 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
+resource modelDeploy 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = {
   parent: account
   name: modelDeploymentName
   sku: {
