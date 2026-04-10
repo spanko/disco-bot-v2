@@ -192,6 +192,14 @@ public class FleetMonitor : BackgroundService
                     await ImportImageAndUpdateAppAsync(stamp, acrName, acrLoginServer ?? $"{acrName}.azurecr.io", appName);
                 }
 
+                // Grant Foundry RBAC to the stamp's ACA identity on the shared Foundry
+                var foundryAccountName = Environment.GetEnvironmentVariable("SHARED_FOUNDRY_ACCOUNT_NAME");
+                var foundryRg = Environment.GetEnvironmentVariable("SHARED_FOUNDRY_RG") ?? "discovery-dev";
+                if (foundryAccountName != null && appName != null)
+                {
+                    await GrantFoundryAccessAsync(stamp, appName, foundryAccountName, foundryRg);
+                }
+
                 var updated = stamp with
                 {
                     Status = StampStatus.Active,
@@ -289,6 +297,62 @@ public class FleetMonitor : BackgroundService
         {
             _logger.LogError(ex, "Failed to import image and update ACA for stamp {StampId}", stamp.StampId);
             // Don't fail the overall status transition — stamp is still Active, just needs manual image push
+        }
+    }
+
+    /// <summary>
+    /// Grants Cognitive Services OpenAI User and Azure AI User roles
+    /// on the shared Foundry account to the stamp's ACA managed identity.
+    /// Uses the HttpClient to call the ARM REST API directly.
+    /// </summary>
+    private async Task GrantFoundryAccessAsync(Stamp stamp, string appName, string foundryAccountName, string foundryRg)
+    {
+        try
+        {
+            // Get the ACA's principal ID
+            var appId = new Azure.Core.ResourceIdentifier(
+                $"/subscriptions/{stamp.SubscriptionId}/resourceGroups/{stamp.ResourceGroup}/providers/Microsoft.App/containerApps/{appName}");
+            var app = _armClient.GetContainerAppResource(appId);
+            var appData = (await app.GetAsync()).Value.Data;
+            var principalId = appData.Identity?.PrincipalId?.ToString();
+            if (principalId is null) return;
+
+            var foundryScope = $"/subscriptions/{stamp.SubscriptionId}/resourceGroups/{foundryRg}/providers/Microsoft.CognitiveServices/accounts/{foundryAccountName}";
+            var cogServicesOpenAIUser = "a001fd3d-188f-4b5d-821b-7da978bf7442";
+            var azureAIUser = "53ca6127-db72-4b80-b1b0-d745d6d5da43";
+
+            // Use GenericResource to create role assignments
+            foreach (var roleId in new[] { cogServicesOpenAIUser, azureAIUser })
+            {
+                try
+                {
+                    var assignmentId = new Azure.Core.ResourceIdentifier(
+                        $"{foundryScope}/providers/Microsoft.Authorization/roleAssignments/{Guid.NewGuid()}");
+
+                    var data = new Azure.ResourceManager.Resources.GenericResourceData(Azure.Core.AzureLocation.EastUS)
+                    {
+                        Properties = BinaryData.FromObjectAsJson(new
+                        {
+                            roleDefinitionId = $"/subscriptions/{stamp.SubscriptionId}/providers/Microsoft.Authorization/roleDefinitions/{roleId}",
+                            principalId,
+                            principalType = "ServicePrincipal",
+                        }),
+                    };
+
+                    await _armClient.GetGenericResources().CreateOrUpdateAsync(
+                        Azure.WaitUntil.Completed, assignmentId, data);
+                }
+                catch (Azure.RequestFailedException ex) when (ex.Status == 409 || ex.Status == 400)
+                {
+                    // Already exists or conflict — skip
+                }
+            }
+
+            _logger.LogInformation("Granted Foundry access to {PrincipalId} for stamp {StampId}", principalId, stamp.StampId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to grant Foundry access for stamp {StampId}", stamp.StampId);
         }
     }
 

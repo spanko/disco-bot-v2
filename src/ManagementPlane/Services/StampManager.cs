@@ -17,6 +17,7 @@ public class StampManager
     private readonly ILogger<StampManager> _logger;
     private readonly string _templateSpecId;
     private readonly string _deployerObjectId;
+    private readonly string _sharedFoundryEndpoint;
 
     public StampManager(ArmClient armClient, Container stampsContainer, ILogger<StampManager> logger)
     {
@@ -25,6 +26,7 @@ public class StampManager
         _logger = logger;
         _templateSpecId = Environment.GetEnvironmentVariable("STAMP_TEMPLATE_SPEC_ID") ?? "";
         _deployerObjectId = Environment.GetEnvironmentVariable("DEPLOYER_OBJECT_ID") ?? "";
+        _sharedFoundryEndpoint = Environment.GetEnvironmentVariable("SHARED_FOUNDRY_ENDPOINT") ?? "";
     }
 
     /// <summary>
@@ -115,6 +117,7 @@ public class StampManager
                 ["suffix"] = new { value = suffix },
                 ["location"] = new { value = request.Location },
                 ["deployerObjectId"] = new { value = _deployerObjectId },
+                ["projectEndpoint"] = new { value = _sharedFoundryEndpoint },
                 ["conversationMode"] = new { value = ToBicepValue(request.ConversationMode) },
                 ["authMode"] = new { value = ToBicepValue(request.AuthMode) },
                 ["enableObservability"] = new { value = false },

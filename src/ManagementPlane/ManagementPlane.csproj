@@ -12,6 +12,7 @@
     <PackageReference Include="Azure.ResourceManager.Resources" Version="1.*" />
     <PackageReference Include="Azure.ResourceManager.AppContainers" Version="1.*" />
     <PackageReference Include="Azure.ResourceManager.ContainerRegistry" Version="1.*" />
+    <PackageReference Include="Azure.ResourceManager.Authorization" Version="1.*" />
     <PackageReference Include="Azure.ResourceManager.CostManagement" Version="1.*" />
     <PackageReference Include="Microsoft.Azure.Cosmos" Version="3.*" />
     <PackageReference Include="Newtonsoft.Json" Version="13.*" />

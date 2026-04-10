@@ -115,20 +115,14 @@ module appInsights 'modules/app-insights.bicep' = {
   }
 }
 
-// AI Foundry — Agent Service (Hub + Project + Model Deployment)
-module aiFoundry 'modules/ai-foundry.bicep' = {
-  name: 'deploy-ai-foundry'
-  params: {
-    accountName: '${baseName}-foundry-${uniqueSuffix}'
-    projectName: '${baseName}-project'
-    location: location
-    tags: tags
-    modelDeploymentName: primaryModelName
-  }
-}
+// AI Foundry — shared across stamps (not deployed per-stamp)
+// Pass the projectEndpoint param from the management plane
+
+@description('Shared Foundry project endpoint (provided by management plane)')
+param projectEndpoint string = ''
 
 // ---------------------------------------------------------------------------
-// Container Registry — shared across stamps in the same subscription
+// Container Registry
 // ---------------------------------------------------------------------------
 
 resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
@@ -165,7 +159,7 @@ module containerApp 'modules/container-app.bicep' = {
     acrLoginServer: empty(imageTag) ? '' : acr.properties.loginServer
     location: location
     tags: tags
-    projectEndpoint: aiFoundry.outputs.projectEndpoint
+    projectEndpoint: projectEndpoint
     modelDeploymentName: primaryModelName
     agentName: 'discovery-agent'
     cosmosEndpoint: cosmos.outputs.endpoint
@@ -184,29 +178,8 @@ module containerApp 'modules/container-app.bicep' = {
 // Security — RBAC
 // ---------------------------------------------------------------------------
 
-// Grant ACA identity access to AI Foundry
-var cognitiveServicesOpenAIUser = 'a001fd3d-188f-4b5d-821b-7da978bf7442'
-var azureAIUser = '53ca6127-db72-4b80-b1b0-d745d6d5da43'
-
-resource foundryOpenAIRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(resourceGroup().id, 'foundry-openai-user', cognitiveServicesOpenAIUser)
-  scope: resourceGroup()
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', cognitiveServicesOpenAIUser)
-    principalId: containerApp.outputs.containerAppPrincipalId
-    principalType: 'ServicePrincipal'
-  }
-}
-
-resource foundryAIUserRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(resourceGroup().id, 'foundry-ai-user', azureAIUser)
-  scope: resourceGroup()
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', azureAIUser)
-    principalId: containerApp.outputs.containerAppPrincipalId
-    principalType: 'ServicePrincipal'
-  }
-}
+// AI Foundry RBAC is granted by FleetMonitor after deployment
+// (shared Foundry is in a different resource group)
 
 module rbac 'modules/role-assignments.bicep' = {
   name: 'deploy-rbac'
@@ -244,7 +217,7 @@ module observability 'modules/observability.bicep' = if (enableObservability) {
 // Outputs
 // ---------------------------------------------------------------------------
 
-output PROJECT_ENDPOINT string = aiFoundry.outputs.projectEndpoint
+output PROJECT_ENDPOINT string = projectEndpoint
 output MODEL_DEPLOYMENT_NAME string = primaryModelName
 output COSMOS_ENDPOINT string = cosmos.outputs.endpoint
 output COSMOS_DATABASE string = 'discovery'
