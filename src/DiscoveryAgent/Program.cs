@@ -50,13 +50,36 @@ builder.Services.AddSingleton<CoverageAnalyzer>();
 
 if (settings.IsLightweight)
 {
-    // Lightweight mode: no Cosmos, no AI Search, no Blob Storage
+    // Lightweight mode: no AI Search, no Blob Storage
+    // Cosmos is optional — used for conversation history persistence if configured
+    if (!string.IsNullOrEmpty(settings.CosmosEndpoint))
+    {
+        builder.Services.AddSingleton(_ =>
+            new CosmosClient(settings.CosmosEndpoint, credential, new CosmosClientOptions
+            {
+                SerializerOptions = new CosmosSerializationOptions
+                {
+                    PropertyNamingPolicy = CosmosPropertyNamingPolicy.CamelCase,
+                },
+            }));
+        builder.Services.AddSingleton(sp =>
+            sp.GetRequiredService<CosmosClient>().GetDatabase(settings.CosmosDatabase));
+    }
+
     builder.Services.AddSingleton<IKnowledgeStore, NullKnowledgeStore>();
     builder.Services.AddSingleton<IKnowledgeQueryService, NullKnowledgeQueryService>();
     builder.Services.AddSingleton<IContextManagementService, NullContextManagementService>();
     builder.Services.AddSingleton<IQuestionnaireProcessor, NullQuestionnaireProcessor>();
     builder.Services.AddSingleton<IUserProfileService, NullUserProfileService>();
-    builder.Services.AddScoped<IConversationHandler, LightweightConversationHandler>();
+    builder.Services.AddScoped<IConversationHandler>(sp =>
+        new LightweightConversationHandler(
+            sp.GetRequiredService<AIProjectClient>(),
+            sp.GetRequiredService<IAgentManager>(),
+            sp.GetRequiredService<IKnowledgeStore>(),
+            sp.GetRequiredService<IUserProfileService>(),
+            sp.GetRequiredService<DiscoveryBotSettings>(),
+            sp.GetRequiredService<ILogger<LightweightConversationHandler>>(),
+            sp.GetService<Database>()));
 }
 else
 {

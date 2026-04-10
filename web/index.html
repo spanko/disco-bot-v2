@@ -105,8 +105,8 @@
 
 <script>
 const API_BASE = '';
-let conversationId = sessionStorage.getItem('conversationId') || null;
-let chatHistory = JSON.parse(sessionStorage.getItem('chatHistory') || '[]');
+let conversationId = localStorage.getItem('conversationId') || null;
+let chatHistory = JSON.parse(localStorage.getItem('chatHistory') || '[]');
 let pendingDocuments = []; // {id, fileName, status}
 
 const chat = document.getElementById('chat');
@@ -163,7 +163,7 @@ async function loadContexts() {
     }
 
     // Restore saved context selection
-    const saved = sessionStorage.getItem('selectedContextId');
+    const saved = localStorage.getItem('selectedContextId');
     if (saved !== null) select.value = saved;
   } catch (e) {
     select.innerHTML = '<option value="">Unbounded Discovery</option>';
@@ -174,7 +174,7 @@ function confirmContext() {
   const overlaySelect = document.getElementById('overlayContextSelect');
   const select = document.getElementById('contextId');
   select.value = overlaySelect.value;
-  sessionStorage.setItem('selectedContextId', select.value);
+  localStorage.setItem('selectedContextId', select.value);
   document.getElementById('contextOverlay').style.display = 'none';
   input.disabled = false;
   sendBtn.disabled = false;
@@ -183,7 +183,7 @@ function confirmContext() {
 
 // Save context selection on change
 document.getElementById('contextId').addEventListener('change', function() {
-  sessionStorage.setItem('selectedContextId', this.value);
+  localStorage.setItem('selectedContextId', this.value);
 });
 
 loadContexts();
@@ -344,7 +344,7 @@ function addMessage(role, text, extras, skipSave) {
 
   if (!skipSave) {
     chatHistory.push({ role, text, extras: extras || {} });
-    sessionStorage.setItem('chatHistory', JSON.stringify(chatHistory));
+    localStorage.setItem('chatHistory', JSON.stringify(chatHistory));
   }
 }
 
@@ -415,7 +415,7 @@ async function sendMessage() {
 
     const data = await res.json();
     conversationId = data.conversationId;
-    sessionStorage.setItem('conversationId', conversationId);
+    localStorage.setItem('conversationId', conversationId);
     convDisplay.textContent = `conv: ${conversationId.slice(0, 20)}...`;
     statusEl.textContent = `Connected - ${data.agentName}`;
 
@@ -436,9 +436,9 @@ async function sendMessage() {
 function newConversation() {
   conversationId = null;
   chatHistory = [];
-  sessionStorage.removeItem('conversationId');
-  sessionStorage.removeItem('chatHistory');
-  sessionStorage.removeItem('selectedContextId');
+  localStorage.removeItem('conversationId');
+  localStorage.removeItem('chatHistory');
+  localStorage.removeItem('selectedContextId');
   chat.innerHTML = '';
   convDisplay.textContent = '';
   statusEl.textContent = 'Ready';

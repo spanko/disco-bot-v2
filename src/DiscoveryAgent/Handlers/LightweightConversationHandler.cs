@@ -3,6 +3,7 @@ using DiscoveryAgent.Configuration;
 using DiscoveryAgent.Core.Interfaces;
 using DiscoveryAgent.Core.Models;
 using DiscoveryAgent.Telemetry;
+using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
 using OpenAI.Responses;
 using System.Collections.Concurrent;
@@ -12,15 +13,10 @@ using System.Text.Json;
 namespace DiscoveryAgent.Handlers;
 
 /// <summary>
-/// Lightweight conversation handler that uses NO Foundry-managed conversations
-/// and NO BYO Cosmos. Instead, it:
-///
-/// 1. Uses an agent-only ProjectResponsesClient (no conversation binding)
-/// 2. Maintains an in-memory history keyed by a generated conversation ID
-/// 3. Re-sends relevant history as InputItems on each turn
-///
-/// This enables zero-cost operation — only the Foundry API call is billable.
-/// Trade-offs: history is lost on container restart, no cross-replica continuity.
+/// Lightweight conversation handler that uses NO Foundry-managed conversations.
+/// History is persisted to Cosmos DB (conversation-turns container) and rebuilt
+/// as ResponseItem inputs on each turn, so sessions survive container restarts
+/// and work across replicas.
 /// </summary>
 public class LightweightConversationHandler : IConversationHandler
 {
@@ -30,10 +26,7 @@ public class LightweightConversationHandler : IConversationHandler
     private readonly IUserProfileService _userProfiles;
     private readonly DiscoveryBotSettings _settings;
     private readonly ILogger<LightweightConversationHandler> _logger;
-
-    // In-memory conversation history. Keys are generated conversation IDs.
-    // ConcurrentDictionary for thread safety across concurrent requests.
-    private static readonly ConcurrentDictionary<string, List<ResponseItem>> _histories = new();
+    private readonly Container? _turnsContainer;
 
     public LightweightConversationHandler(
         AIProjectClient projectClient,
@@ -41,7 +34,8 @@ public class LightweightConversationHandler : IConversationHandler
         IKnowledgeStore knowledgeStore,
         IUserProfileService userProfiles,
         DiscoveryBotSettings settings,
-        ILogger<LightweightConversationHandler> logger)
+        ILogger<LightweightConversationHandler> logger,
+        Database? cosmosDb = null)
     {
         _projectClient = projectClient;
         _agentManager = agentManager;
@@ -49,13 +43,14 @@ public class LightweightConversationHandler : IConversationHandler
         _userProfiles = userProfiles;
         _settings = settings;
         _logger = logger;
+        _turnsContainer = cosmosDb?.GetContainer("conversation-turns");
     }
 
     public async Task<ConversationResponse> HandleAsync(
         ConversationRequest request, CancellationToken ct = default)
     {
         // ─────────────────────────────────────────────────────────────
-        // Step 1: Get or create conversation (in-memory only)
+        // Step 1: Get or create conversation
         // ─────────────────────────────────────────────────────────────
         string conversationId;
 
@@ -68,13 +63,10 @@ public class LightweightConversationHandler : IConversationHandler
         else
         {
             conversationId = $"lw-{Guid.NewGuid():N}";
-            _histories[conversationId] = [];
             DiscoveryMetrics.ConversationsCreated.Add(1,
                 new KeyValuePair<string, object?>("contextId", request.ContextId ?? "default"));
             _logger.LogInformation("Created lightweight conversation: {ConversationId}", conversationId);
         }
-
-        var history = _histories.GetOrAdd(conversationId, _ => []);
 
         // ─────────────────────────────────────────────────────────────
         // Step 2: Ensure agent exists (lazy init in lightweight mode)
@@ -82,16 +74,20 @@ public class LightweightConversationHandler : IConversationHandler
         await _agentManager.EnsureAgentExistsAsync(ct);
 
         // ─────────────────────────────────────────────────────────────
-        // Step 3: Build input with history + new message
+        // Step 3: Load history from Cosmos and build input
         // ─────────────────────────────────────────────────────────────
         var responseClient = _projectClient.OpenAI.GetProjectResponsesClientForAgent(
             defaultAgent: _agentManager.AgentName);
 
         var responseOptions = new CreateResponseOptions();
 
-        // Re-send prior history
-        foreach (var item in history)
-            responseOptions.InputItems.Add(item);
+        // Rebuild history from persisted turns
+        var priorTurns = await LoadTurnsAsync(conversationId);
+        foreach (var turn in priorTurns)
+        {
+            responseOptions.InputItems.Add(ResponseItem.CreateUserMessageItem(turn.UserMessage));
+            responseOptions.InputItems.Add(ResponseItem.CreateAssistantMessageItem(turn.AgentResponse));
+        }
 
         // Add new user message
         var userItem = ResponseItem.CreateUserMessageItem(request.Message);
@@ -99,7 +95,7 @@ public class LightweightConversationHandler : IConversationHandler
 
         _logger.LogInformation(
             "Creating lightweight response: Agent={Agent}, Conversation={ConversationId}, HistoryItems={HistoryCount}, Input={InputLen} chars",
-            _agentManager.AgentName, conversationId, history.Count, request.Message.Length);
+            _agentManager.AgentName, conversationId, priorTurns.Count, request.Message.Length);
 
         var response = await responseClient.CreateResponseAsync(responseOptions, ct);
         RecordTokenUsage(response.Value);
@@ -144,8 +140,11 @@ public class LightweightConversationHandler : IConversationHandler
 
             var followUpOptions = new CreateResponseOptions();
             // Include full history + current turn for context
-            foreach (var item in history)
-                followUpOptions.InputItems.Add(item);
+            foreach (var turn in priorTurns)
+            {
+                followUpOptions.InputItems.Add(ResponseItem.CreateUserMessageItem(turn.UserMessage));
+                followUpOptions.InputItems.Add(ResponseItem.CreateAssistantMessageItem(turn.AgentResponse));
+            }
             followUpOptions.InputItems.Add(userItem);
             foreach (var output in inputItems)
                 followUpOptions.InputItems.Add(output);
@@ -156,12 +155,20 @@ public class LightweightConversationHandler : IConversationHandler
         }
 
         // ─────────────────────────────────────────────────────────────
-        // Step 4: Update in-memory history
+        // Step 4: Persist turn to Cosmos
         // ─────────────────────────────────────────────────────────────
-        history.Add(userItem);
-        // Store the assistant's final text response in history
         var outputText = currentResponse.GetOutputText();
-        history.Add(ResponseItem.CreateAssistantMessageItem(outputText));
+
+        await SaveTurnAsync(new ConversationTurn
+        {
+            ConversationId = conversationId,
+            ContextId = request.ContextId ?? "default",
+            UserId = request.UserId,
+            TurnNumber = priorTurns.Count + 1,
+            UserMessage = request.Message,
+            AgentResponse = outputText,
+            ExtractedKnowledgeIds = extractedKnowledgeIds.Count > 0 ? extractedKnowledgeIds : null,
+        });
 
         return new ConversationResponse(
             ConversationId: conversationId,
@@ -282,6 +289,44 @@ public class LightweightConversationHandler : IConversationHandler
     {
         DiscoveryMetrics.SectionsCompleted.Add(1);
         return new(JsonSerializer.Serialize(new { status = "section_completed" }), null);
+    }
+
+    // ─── Cosmos-backed history ─────────────────────────────────────
+
+    private async Task<List<ConversationTurn>> LoadTurnsAsync(string conversationId)
+    {
+        if (_turnsContainer is null) return [];
+
+        try
+        {
+            var query = new QueryDefinition(
+                "SELECT * FROM c WHERE c.conversationId = @convId ORDER BY c.turnNumber ASC")
+                .WithParameter("@convId", conversationId);
+
+            var turns = new List<ConversationTurn>();
+            using var it = _turnsContainer.GetItemQueryIterator<ConversationTurn>(query);
+            while (it.HasMoreResults) turns.AddRange(await it.ReadNextAsync());
+            return turns;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to load turns for {ConversationId} — starting fresh", conversationId);
+            return [];
+        }
+    }
+
+    private async Task SaveTurnAsync(ConversationTurn turn)
+    {
+        if (_turnsContainer is null) return;
+
+        try
+        {
+            await _turnsContainer.UpsertItemAsync(turn, new PartitionKey(turn.ConversationId));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to save turn for {ConversationId}", turn.ConversationId);
+        }
     }
 
     private record ToolCallResult(string Output, List<string>? KnowledgeIds);
