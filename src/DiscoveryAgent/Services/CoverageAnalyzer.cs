@@ -6,142 +6,119 @@ namespace DiscoveryAgent.Services;
 
 public record CoverageResult
 {
-    public List<string> CoveredIds { get; init; } = [];
-    public List<string> MissedIds { get; init; } = [];
-    public Dictionary<string, CoverageSectionSummary> SectionSummaries { get; init; } = new();
-    public Dictionary<string, KnowledgeScore> Scores { get; init; } = new();
+    public List<AreaCoverage> Areas { get; init; } = [];
+    public int CoveredCount { get; init; }
+    public int TotalAreas { get; init; }
     public int CoveragePercent { get; init; }
+    public int TotalKnowledgeItems { get; init; }
 }
 
-public record CoverageSectionSummary
+public record AreaCoverage
 {
-    public int Covered { get; init; }
-    public int Total { get; init; }
-    public int Percent { get; init; }
-}
-
-public record KnowledgeScore
-{
-    public string? Maturity { get; init; }
-    public string? Evidence { get; init; }
+    public string Area { get; init; } = "";
+    public bool Covered { get; init; }
+    public double MatchScore { get; init; }
+    public int ItemCount { get; init; }
 }
 
 /// <summary>
-/// Analyzes question coverage for a conversation by examining knowledge items
-/// and their tags for question IDs.
+/// Analyzes discovery area coverage by matching knowledge item content and tags
+/// against the context's discovery areas. Does not rely on question IDs — uses
+/// keyword matching to determine which topics have been addressed.
 /// </summary>
 public class CoverageAnalyzer
 {
     private readonly IKnowledgeStore _knowledgeStore;
+    private readonly IContextManagementService _contextService;
     private readonly ILogger<CoverageAnalyzer> _logger;
-
-    // Well-known question IDs and their section mappings
-    private static readonly string[] AllQuestionIds =
-        ["sa-01","sa-02","sa-03","sa-04","eo-01","eo-02","eo-03","eo-04",
-         "cp-01","cp-02","cp-03","cp-04","cp-05","cp-06","cm-01","cm-02"];
-
-    private static readonly Dictionary<string, string[]> Sections = new()
-    {
-        ["strategy-alignment"] = ["sa-01", "sa-02", "sa-03", "sa-04"],
-        ["execution-operations"] = ["eo-01", "eo-02", "eo-03", "eo-04"],
-        ["culture-people"] = ["cp-01", "cp-02", "cp-03", "cp-04", "cp-05", "cp-06"],
-        ["change-management"] = ["cm-01", "cm-02"],
-    };
 
     public CoverageAnalyzer(
         IKnowledgeStore knowledgeStore,
+        IContextManagementService contextService,
         ILogger<CoverageAnalyzer> logger)
     {
         _knowledgeStore = knowledgeStore;
+        _contextService = contextService;
         _logger = logger;
     }
 
     /// <summary>
-    /// Analyzes coverage for a given context by examining knowledge item tags.
-    /// Knowledge items are tagged with question IDs (e.g., "sa-01") and maturity
-    /// values (e.g., "maturity:yes") by the agent during extraction.
+    /// Analyzes coverage for a context by matching knowledge items against discovery areas.
     /// </summary>
     public async Task<CoverageResult> AnalyzeAsync(string contextId)
     {
-        var knowledgeItems = await _knowledgeStore.GetByContextAsync(contextId);
-        return Analyze(knowledgeItems);
+        var context = await _contextService.GetContextAsync(contextId);
+        if (context is null)
+        {
+            return new CoverageResult();
+        }
+
+        var items = await _knowledgeStore.GetByContextAsync(contextId);
+        return Analyze(context.DiscoveryAreas, items);
     }
 
     /// <summary>
-    /// Analyzes coverage from a pre-fetched list of knowledge items.
+    /// Analyzes coverage from pre-fetched data.
     /// </summary>
-    public CoverageResult Analyze(List<KnowledgeItem> knowledgeItems)
+    public CoverageResult Analyze(List<string> discoveryAreas, List<KnowledgeItem> knowledgeItems)
     {
-        var coveredIds = new HashSet<string>();
-        var scores = new Dictionary<string, KnowledgeScore>();
+        var allTags = knowledgeItems
+            .SelectMany(i => i.Tags ?? [])
+            .Select(t => t.ToLowerInvariant())
+            .ToHashSet();
 
-        foreach (var item in knowledgeItems)
+        var allContent = string.Join(" ", knowledgeItems.Select(i => i.Content.ToLowerInvariant()));
+
+        var areas = discoveryAreas.Select(area =>
         {
-            if (item.Tags is null) continue;
+            var areaLower = area.ToLowerInvariant();
+            var keywords = areaLower
+                .Split(new[] { ' ', ',', '(', ')', '-', '/' }, StringSplitOptions.RemoveEmptyEntries)
+                .Where(w => w.Length > 3)
+                .Distinct()
+                .ToList();
 
-            string? maturity = null;
-            var questionIds = new List<string>();
+            if (keywords.Count == 0)
+                return new AreaCoverage { Area = area, Covered = false, MatchScore = 0, ItemCount = 0 };
 
-            foreach (var tag in item.Tags)
+            var matchCount = keywords.Count(w =>
+                allTags.Any(t => t.Contains(w)) || allContent.Contains(w));
+
+            var matchScore = (double)matchCount / keywords.Count;
+            var covered = matchScore >= 0.4; // 40% keyword match threshold
+
+            // Count items that specifically mention this area
+            var itemCount = knowledgeItems.Count(i =>
             {
-                if (tag.StartsWith("maturity:"))
-                {
-                    maturity = tag["maturity:".Length..];
-                }
-                else if (AllQuestionIds.Contains(tag))
-                {
-                    questionIds.Add(tag);
-                    coveredIds.Add(tag);
-                }
-            }
+                var content = i.Content.ToLowerInvariant();
+                var tags = (i.Tags ?? []).Select(t => t.ToLowerInvariant()).ToList();
+                return keywords.Any(w => content.Contains(w) || tags.Any(t => t.Contains(w)));
+            });
 
-            foreach (var qId in questionIds)
+            return new AreaCoverage
             {
-                // Store the first (or best) score per question
-                if (!scores.ContainsKey(qId))
-                {
-                    scores[qId] = new KnowledgeScore
-                    {
-                        Maturity = maturity,
-                        Evidence = item.Content.Length > 200
-                            ? item.Content[..200] + "..."
-                            : item.Content,
-                    };
-                }
-            }
-        }
-
-        var missedIds = AllQuestionIds.Where(q => !coveredIds.Contains(q)).ToList();
-        var sectionSummaries = new Dictionary<string, CoverageSectionSummary>();
-
-        foreach (var (sectionId, questionIds) in Sections)
-        {
-            var covered = questionIds.Count(q => coveredIds.Contains(q));
-            sectionSummaries[sectionId] = new CoverageSectionSummary
-            {
+                Area = area,
                 Covered = covered,
-                Total = questionIds.Length,
-                Percent = questionIds.Length > 0
-                    ? (int)Math.Round(100.0 * covered / questionIds.Length)
-                    : 0,
+                MatchScore = Math.Round(matchScore, 2),
+                ItemCount = itemCount,
             };
-        }
+        }).ToList();
 
-        var totalCoverage = AllQuestionIds.Length > 0
-            ? (int)Math.Round(100.0 * coveredIds.Count / AllQuestionIds.Length)
-            : 0;
+        var coveredCount = areas.Count(a => a.Covered);
+        var totalAreas = areas.Count;
+        var pct = totalAreas > 0 ? (int)Math.Round(100.0 * coveredCount / totalAreas) : 0;
 
         _logger.LogInformation(
-            "Coverage analysis: {Covered}/{Total} ({Pct}%)",
-            coveredIds.Count, AllQuestionIds.Length, totalCoverage);
+            "Coverage analysis: {Covered}/{Total} areas ({Pct}%), {Items} knowledge items",
+            coveredCount, totalAreas, pct, knowledgeItems.Count);
 
         return new CoverageResult
         {
-            CoveredIds = coveredIds.ToList(),
-            MissedIds = missedIds,
-            SectionSummaries = sectionSummaries,
-            Scores = scores,
-            CoveragePercent = totalCoverage,
+            Areas = areas,
+            CoveredCount = coveredCount,
+            TotalAreas = totalAreas,
+            CoveragePercent = pct,
+            TotalKnowledgeItems = knowledgeItems.Count,
         };
     }
 }

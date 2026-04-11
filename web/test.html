@@ -345,7 +345,7 @@ async function startTest() {
   const baseUrl = selectedStamp === 'dev' ? document.getElementById('devStampUrl').value.replace(/\/$/, '') : '';
 
   if (numRuns === 1) {
-    const run = { messages: [], coveredIds: new Set(), persona: selectedPersona, mode: selectedMode.id, totalTurns: 0, conversationId: '' };
+    const run = { messages: [], coveragePercent: 0, coveredAreas: 0, totalAreas: 0, persona: selectedPersona, mode: selectedMode.id, totalTurns: 0, conversationId: '' };
     runs.push(run);
     renderWatch();
     await executeRun(run, baseUrl, contextId);
@@ -353,7 +353,7 @@ async function startTest() {
     for (let i = 0; i < numRuns; i++) {
       const p = PERSONAS[i % PERSONAS.length];
       const m = selectedMode;
-      runs.push({ messages: [], coveredIds: new Set(), persona: p, mode: m.id, totalTurns: 0, conversationId: '' });
+      runs.push({ messages: [], coveragePercent: 0, coveredAreas: 0, totalAreas: 0, persona: p, mode: m.id, totalTurns: 0, conversationId: '' });
     }
     renderWatch();
     for (let i = 0; i < numRuns; i++) {
@@ -426,9 +426,9 @@ function handleSSEEvent(run, eventType, data) {
   if (eventType === 'turn' || data.type === 'turn') {
     run.messages.push({ role: data.role, content: data.content, turn: data.turnNumber });
     run.totalTurns = data.turnNumber;
-    if (data.coveredQuestionIds) {
-      data.coveredQuestionIds.forEach(id => run.coveredIds.add(id));
-    }
+    run.coveragePercent = data.coveragePercent || 0;
+    run.coveredAreas = data.coveredAreas || 0;
+    run.totalAreas = data.totalAreas || 0;
     renderWatch();
     scrollMessages();
   } else if (eventType === 'error' || data.type === 'error') {
@@ -439,9 +439,9 @@ function handleSSEEvent(run, eventType, data) {
   } else if (eventType === 'complete' || data.type === 'complete') {
     run.totalTurns = data.totalTurns;
     run.conversationId = data.conversationId;
-    if (data.coveredQuestionIds) {
-      data.coveredQuestionIds.forEach(id => run.coveredIds.add(id));
-    }
+    run.coveragePercent = data.coveragePercent || 0;
+    run.coveredAreas = data.coveredAreas || 0;
+    run.totalAreas = data.totalAreas || 0;
     renderWatch();
   }
 }
@@ -458,21 +458,14 @@ function renderWatch() {
   document.getElementById('wTurns').textContent = run.messages.length;
   document.getElementById('wTurnsSub').textContent = '';
 
-  const covCount = run.coveredIds.size;
-  const total = QUESTION_IDS.length;
-  const pct = total > 0 ? Math.round(covCount / total * 100) : 0;
-  document.getElementById('wCoverage').textContent = covCount + '/' + total;
-  document.getElementById('wCoverageSub').textContent = pct + '%';
+  document.getElementById('wCoverage').textContent = run.coveredAreas + '/' + run.totalAreas;
+  document.getElementById('wCoverageSub').textContent = run.coveragePercent + '%';
 
   // Coverage bars
   const barsDiv = document.getElementById('watchCoverageBars');
-  barsDiv.innerHTML = Object.entries(SECTIONS).map(([sec, indices]) => {
-    const covered = indices.filter(i => run.coveredIds.has(QUESTION_IDS[i])).length;
-    const t = indices.length;
-    const p = t > 0 ? Math.round(covered / t * 100) : 0;
-    const colorClass = p === 100 ? 'bar-green' : p >= 50 ? 'bar-yellow' : 'bar-red';
-    return '<div class="coverage-bar"><div class="bar-label"><span class="name">' + SECTION_NAMES[sec] + '</span><span class="val">' + covered + '/' + t + ' (' + p + '%)</span></div><div class="bar-track"><div class="bar-fill ' + colorClass + '" style="width:' + p + '%"></div></div></div>';
-  }).join('');
+  const p = run.coveragePercent;
+  const colorClass = p === 100 ? 'bar-green' : p >= 50 ? 'bar-yellow' : 'bar-red';
+  barsDiv.innerHTML = '<div class="coverage-bar"><div class="bar-label"><span class="name">Overall Coverage</span><span class="val">' + run.coveredAreas + '/' + run.totalAreas + ' areas (' + p + '%)</span></div><div class="bar-track"><div class="bar-fill ' + colorClass + '" style="width:' + p + '%"></div></div></div>';
 
   // Messages
   const area = document.getElementById('messageArea');
@@ -541,11 +534,9 @@ function renderResults() {
   // Coverage by run
   html += '<div class="results-section"><h3>Coverage by run</h3>';
   runs.forEach((r, i) => {
-    const cov = r.coveredIds.size;
-    const total = QUESTION_IDS.length;
-    const p = total > 0 ? Math.round(cov / total * 100) : 0;
+    const p = r.coveragePercent;
     const colorClass = p === 100 ? 'bar-green' : p >= 50 ? 'bar-yellow' : 'bar-red';
-    html += '<div class="coverage-bar"><div class="bar-label"><span class="name">Run ' + (i + 1) + ': ' + r.persona.name + ' (' + r.mode + ')</span><span class="val">' + cov + '/' + total + ' (' + p + '%)</span></div><div class="bar-track"><div class="bar-fill ' + colorClass + '" style="width:' + p + '%"></div></div></div>';
+    html += '<div class="coverage-bar"><div class="bar-label"><span class="name">Run ' + (i + 1) + ': ' + r.persona.name + ' (' + r.mode + ')</span><span class="val">' + r.coveredAreas + '/' + r.totalAreas + ' (' + p + '%)</span></div><div class="bar-track"><div class="bar-fill ' + colorClass + '" style="width:' + p + '%"></div></div></div>';
   });
   html += '</div>';
 
@@ -582,8 +573,7 @@ function generateAnalysis(runs) {
   const issues = [];
   const suggestions = [];
 
-  const avgCoverage = runs.reduce((s, r) => s + r.coveredIds.size, 0) / runs.length;
-  const avgPct = Math.round((avgCoverage / QUESTION_IDS.length) * 100);
+  const avgPct = Math.round(runs.reduce((s, r) => s + r.coveragePercent, 0) / runs.length);
 
   if (avgPct < 70) {
     issues.push('Average coverage is only ' + avgPct + '% across ' + runs.length + ' runs. The agent is consistently missing questions.');
@@ -601,9 +591,9 @@ function generateAnalysis(runs) {
 
   const adversarialRuns = runs.filter(r => r.mode === 'adversarial');
   if (adversarialRuns.length > 0) {
-    const advAvg = Math.round(adversarialRuns.reduce((s, r) => s + r.coveredIds.size, 0) / adversarialRuns.length);
-    if (advAvg < QUESTION_IDS.length * 0.6) {
-      issues.push('Adversarial runs averaged only ' + advAvg + '/' + QUESTION_IDS.length + ' coverage. The agent may not be probing enough when respondents give short or dismissive answers.');
+    const advAvgPct = Math.round(adversarialRuns.reduce((s, r) => s + r.coveragePercent, 0) / adversarialRuns.length);
+    if (advAvgPct < 60) {
+      issues.push('Adversarial runs averaged only ' + advAvgPct + '% coverage. The agent may not be probing enough when respondents give short or dismissive answers.');
       suggestions.push("Add instructions for handling resistant respondents: probe once with a reframed question before accepting short answers.");
     }
   }
@@ -632,9 +622,9 @@ function copyResultsToClipboard() {
     runs: runs.map(r => ({
       persona: r.persona.name,
       mode: r.mode,
-      coverage: r.coveredIds.size,
-      totalQuestions: QUESTION_IDS.length,
-      coveredIds: [...r.coveredIds],
+      coveragePercent: r.coveragePercent,
+      coveredAreas: r.coveredAreas,
+      totalAreas: r.totalAreas,
       totalTurns: r.totalTurns,
     })),
     analysis,

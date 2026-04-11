@@ -35,16 +35,19 @@ public record TestTurnEvent
     public string Role { get; init; } = "";
     public string Content { get; init; } = "";
     public List<string> ExtractedKnowledgeIds { get; init; } = [];
-    public List<string> CoveredQuestionIds { get; init; } = [];
+    public int CoveragePercent { get; init; }
+    public int CoveredAreas { get; init; }
+    public int TotalAreas { get; init; }
 }
 
 public record TestCompleteEvent
 {
     public string Type { get; init; } = "complete";
     public int TotalTurns { get; init; }
-    public List<string> CoveredQuestionIds { get; init; } = [];
-    public List<string> MissedQuestionIds { get; init; } = [];
     public int CoveragePercent { get; init; }
+    public int CoveredAreas { get; init; }
+    public int TotalAreas { get; init; }
+    public List<AreaCoverage>? Areas { get; init; }
     public string ConversationId { get; init; } = "";
 }
 
@@ -56,20 +59,18 @@ public record TestCompleteEvent
 public class TestRunnerService
 {
     private readonly AIProjectClient _projectClient;
+    private readonly CoverageAnalyzer _coverageAnalyzer;
     private readonly DiscoveryBotSettings _settings;
     private readonly ILogger<TestRunnerService> _logger;
 
-    // Well-known question IDs for coverage tracking
-    private static readonly string[] AllQuestionIds =
-        ["sa-01","sa-02","sa-03","sa-04","eo-01","eo-02","eo-03","eo-04",
-         "cp-01","cp-02","cp-03","cp-04","cp-05","cp-06","cm-01","cm-02"];
-
     public TestRunnerService(
         AIProjectClient projectClient,
+        CoverageAnalyzer coverageAnalyzer,
         DiscoveryBotSettings settings,
         ILogger<TestRunnerService> logger)
     {
         _projectClient = projectClient;
+        _coverageAnalyzer = coverageAnalyzer;
         _settings = settings;
         _logger = logger;
     }
@@ -85,7 +86,6 @@ public class TestRunnerService
     {
         var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var userId = $"test-runner-{timestamp}";
-        var coveredIds = new HashSet<string>();
         int turnNumber = 0;
 
         _logger.LogInformation(
@@ -111,8 +111,8 @@ public class TestRunnerService
             Content = agentResponse.Response,
             ExtractedKnowledgeIds = agentResponse.ExtractedKnowledgeIds ?? [],
         };
-        UpdateCoverage(coveredIds, agentResponse.ExtractedKnowledgeIds, knowledgeStore, request.ContextId);
-        agentTurn = agentTurn with { CoveredQuestionIds = coveredIds.ToList() };
+        var coverage = await _coverageAnalyzer.AnalyzeAsync(request.ContextId);
+        agentTurn = agentTurn with { CoveragePercent = coverage.CoveragePercent, CoveredAreas = coverage.CoveredCount, TotalAreas = coverage.TotalAreas };
         yield return agentTurn;
 
         // Conversation history for respondent context
@@ -145,7 +145,9 @@ public class TestRunnerService
                 TurnNumber = turnNumber,
                 Role = "respondent",
                 Content = respondentReply,
-                CoveredQuestionIds = coveredIds.ToList(),
+                CoveragePercent = coverage.CoveragePercent,
+                CoveredAreas = coverage.CoveredCount,
+                TotalAreas = coverage.TotalAreas,
             };
             yield return respondentTurn;
 
@@ -187,7 +189,7 @@ public class TestRunnerService
             }
             turnNumber++;
 
-            UpdateCoverage(coveredIds, agentResponse.ExtractedKnowledgeIds, knowledgeStore, request.ContextId);
+            coverage = await _coverageAnalyzer.AnalyzeAsync(request.ContextId);
 
             var nextAgentTurn = new TestTurnEvent
             {
@@ -195,7 +197,9 @@ public class TestRunnerService
                 Role = "agent",
                 Content = agentResponse.Response,
                 ExtractedKnowledgeIds = agentResponse.ExtractedKnowledgeIds ?? [],
-                CoveredQuestionIds = coveredIds.ToList(),
+                CoveragePercent = coverage.CoveragePercent,
+                CoveredAreas = coverage.CoveredCount,
+                TotalAreas = coverage.TotalAreas,
             };
             yield return nextAgentTurn;
 
@@ -209,24 +213,22 @@ public class TestRunnerService
             }
         }
 
-        // Emit completion event
-        var missedIds = AllQuestionIds.Where(q => !coveredIds.Contains(q)).ToList();
-        var coveragePct = AllQuestionIds.Length > 0
-            ? (int)Math.Round(100.0 * coveredIds.Count / AllQuestionIds.Length)
-            : 0;
+        // Emit completion event with final coverage
+        coverage = await _coverageAnalyzer.AnalyzeAsync(request.ContextId);
 
         yield return new TestCompleteEvent
         {
             TotalTurns = turnNumber,
-            CoveredQuestionIds = coveredIds.ToList(),
-            MissedQuestionIds = missedIds,
-            CoveragePercent = coveragePct,
+            CoveragePercent = coverage.CoveragePercent,
+            CoveredAreas = coverage.CoveredCount,
+            TotalAreas = coverage.TotalAreas,
+            Areas = coverage.Areas,
             ConversationId = conversationId,
         };
 
         _logger.LogInformation(
-            "Test run complete: {TotalTurns} turns, {Coverage}% coverage, ConversationId={ConversationId}",
-            turnNumber, coveragePct, conversationId);
+            "Test run complete: {TotalTurns} turns, {Coverage}% coverage ({Covered}/{Total} areas), ConversationId={ConversationId}",
+            turnNumber, coverage.CoveragePercent, coverage.CoveredCount, coverage.TotalAreas, conversationId);
     }
 
     private static string BuildRespondentPrompt(TestPersona persona, string responseMode)
@@ -285,22 +287,6 @@ public class TestRunnerService
         return completion.Value.Content[0].Text;
     }
 
-    private static void UpdateCoverage(
-        HashSet<string> coveredIds,
-        List<string>? extractedKnowledgeIds,
-        IKnowledgeStore knowledgeStore,
-        string contextId)
-    {
-        // In a real implementation we would query knowledge items by their IDs
-        // and check tags for question IDs. For now, we track based on the
-        // knowledge extraction happening (the agent tags items with question IDs).
-        // The CoverageAnalyzer handles the full query.
-        if (extractedKnowledgeIds is not null)
-        {
-            // We'll let the CoverageAnalyzer do the detailed query;
-            // here we just note that extraction occurred.
-        }
-    }
 
     private static async Task<T> WithRetry<T>(Func<Task<T>> action, CancellationToken ct, int maxRetries = 3)
     {
