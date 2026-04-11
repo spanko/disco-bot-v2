@@ -105,7 +105,7 @@
 <!-- ═══════════════ KNOWLEDGE TAB ═══════════════ -->
 <div class="panel active" id="panel-knowledge">
   <div class="toolbar">
-    <label>Context: <input type="text" id="contextId" value="default"></label>
+    <label>Context: <select id="contextId" onchange="loadKnowledge()"><option value="">Loading...</option></select></label>
     <button class="btn" onclick="loadKnowledge()">Load</button>
     <div class="spacer"></div>
     <span id="totalCount" style="font-size:13px;color:#666;"></span>
@@ -170,6 +170,33 @@ function esc(s) {
   d.textContent = String(s);
   return d.innerHTML;
 }
+
+// ═══════════════════════════════════════════════════════════════
+// LOAD CONTEXTS INTO DROPDOWN
+// ═══════════════════════════════════════════════════════════════
+async function loadAdminContexts() {
+  const select = document.getElementById('contextId');
+  try {
+    const res = await fetch(`${API}/manage/contexts`);
+    if (!res.ok) throw new Error();
+    const contexts = await res.json();
+    select.innerHTML = '';
+    if (contexts.length === 0) {
+      select.innerHTML = '<option value="default">default</option>';
+    } else {
+      for (const ctx of contexts) {
+        const opt = document.createElement('option');
+        opt.value = ctx.contextId;
+        opt.textContent = ctx.name || ctx.contextId;
+        select.appendChild(opt);
+      }
+    }
+    loadKnowledge();
+  } catch {
+    select.innerHTML = '<option value="default">default</option>';
+  }
+}
+loadAdminContexts();
 
 // ═══════════════════════════════════════════════════════════════
 // KNOWLEDGE
@@ -260,7 +287,7 @@ function prevPage(){if(currentPage>0){currentPage--;renderKnowledge();window.scr
 function nextPage(){currentPage++;renderKnowledge();window.scrollTo(0,0);}
 
 document.getElementById('searchInput').addEventListener('keydown',e=>{if(e.key==='Enter')semanticSearch();});
-document.getElementById('contextId').addEventListener('keydown',e=>{if(e.key==='Enter')loadKnowledge();});
+// Context dropdown auto-loads on change (set in HTML onchange)
 
 // ═══════════════════════════════════════════════════════════════
 // CONTEXTS
