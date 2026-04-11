@@ -132,7 +132,7 @@ public class TestRunnerService
         while (turnNumber < request.MaxTurns && !ct.IsCancellationRequested)
         {
             // Pace the conversation to avoid rate limits (429)
-            await Task.Delay(2000, ct);
+            await Task.Delay(3000, ct);
 
             // Generate respondent reply with retry on 429
             var respondentReply = await WithRetry(
