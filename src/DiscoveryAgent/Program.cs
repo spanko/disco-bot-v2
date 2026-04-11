@@ -386,6 +386,37 @@ app.MapGet("/api/conversations", async (
     return Results.Ok(convos);
 });
 
+// Resume: find the latest conversation for a user + context
+app.MapGet("/api/conversations/resume", async (
+    string userId, string contextId, Database cosmosDb) =>
+{
+    var container = cosmosDb.GetContainer("conversation-turns");
+    var query = new QueryDefinition(
+        "SELECT TOP 1 c.conversationId FROM c WHERE c.userId = @uid AND c.contextId = @ctx ORDER BY c.timestamp DESC")
+        .WithParameter("@uid", userId)
+        .WithParameter("@ctx", contextId);
+
+    using var it = container.GetItemQueryIterator<dynamic>(query);
+    if (it.HasMoreResults)
+    {
+        var results = await it.ReadNextAsync();
+        var first = results.FirstOrDefault();
+        if (first is not null)
+        {
+            string convId = first.conversationId;
+            // Load full history
+            var histQuery = new QueryDefinition(
+                "SELECT * FROM c WHERE c.conversationId = @convId ORDER BY c.timestamp ASC")
+                .WithParameter("@convId", convId);
+            var turns = new List<ConversationTurn>();
+            using var hit = container.GetItemQueryIterator<ConversationTurn>(histQuery);
+            while (hit.HasMoreResults) turns.AddRange(await hit.ReadNextAsync());
+            return Results.Ok(new { conversationId = convId, turns });
+        }
+    }
+    return Results.Ok(new { conversationId = (string?)null, turns = new List<ConversationTurn>() });
+});
+
 // =====================================================================
 // Knowledge APIs
 // =====================================================================
@@ -430,36 +461,29 @@ app.MapGet("/api/knowledge/{contextId}/provenance/{itemId}", async (
 
 app.MapGet("/api/progress/{contextId}", async (
     string contextId,
-    IContextManagementService contextService,
-    IKnowledgeStore knowledgeStore) =>
+    string? userId,
+    CoverageAnalyzer coverageAnalyzer,
+    IKnowledgeStore knowledgeStore,
+    IContextManagementService contextService) =>
 {
     var context = await contextService.GetContextAsync(contextId);
     if (context is null) return Results.NotFound();
 
     var items = await knowledgeStore.GetByContextAsync(contextId);
-    var allTags = items.SelectMany(i => i.Tags).Select(t => t.ToLowerInvariant()).ToHashSet();
-    var allContent = string.Join(" ", items.Select(i => i.Content.ToLowerInvariant()));
+    if (!string.IsNullOrEmpty(userId))
+        items = items.Where(i => i.SourceUserId == userId).ToList();
 
-    var areas = context.DiscoveryAreas.Select(area =>
-    {
-        // Match by checking if any knowledge item tags or content relate to this area
-        var areaWords = area.ToLowerInvariant().Split(new[] { ' ', ',', '(', ')' }, StringSplitOptions.RemoveEmptyEntries)
-            .Where(w => w.Length > 3).ToList();
-        var matchCount = areaWords.Count(w => allTags.Any(t => t.Contains(w)) || allContent.Contains(w));
-        var covered = matchCount >= Math.Max(2, areaWords.Count / 2);
-        return new { area, covered, matchScore = areaWords.Count > 0 ? (double)matchCount / areaWords.Count : 0 };
-    }).ToList();
-
-    var coveredCount = areas.Count(a => a.covered);
+    var result = coverageAnalyzer.Analyze(context.DiscoveryAreas, items);
     return Results.Ok(new
     {
         contextId,
+        userId = userId ?? "all",
         contextName = context.Name,
-        totalAreas = areas.Count,
-        coveredAreas = coveredCount,
-        percentComplete = areas.Count > 0 ? (int)Math.Round(100.0 * coveredCount / areas.Count) : 0,
-        areas,
-        totalKnowledgeItems = items.Count,
+        totalAreas = result.TotalAreas,
+        coveredAreas = result.CoveredCount,
+        percentComplete = result.CoveragePercent,
+        areas = result.Areas,
+        totalKnowledgeItems = result.TotalKnowledgeItems,
     });
 });
 

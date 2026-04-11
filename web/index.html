@@ -224,6 +224,35 @@ document.getElementById('contextId').addEventListener('change', function() {
 
 loadContexts();
 
+// ── Auto-resume previous conversation for this user+context ──
+async function tryResumeConversation() {
+  if (conversationId) return;
+  const userId = document.getElementById('userId').value;
+  const contextId = document.getElementById('contextId').value;
+  if (!userId || !contextId) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/conversations/resume?userId=${encodeURIComponent(userId)}&contextId=${encodeURIComponent(contextId)}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.conversationId || !data.turns?.length) return;
+
+    conversationId = data.conversationId;
+    localStorage.setItem('conversationId', conversationId);
+    convDisplay.textContent = `conv: ${conversationId.slice(0, 20)}...`;
+    statusEl.textContent = `Resumed (${data.turns.length} turns)`;
+
+    chatHistory = [];
+    for (const turn of data.turns) {
+      addMessage('user', turn.userMessage, {}, true);
+      addMessage('agent', turn.agentResponse, { knowledgeIds: turn.extractedKnowledgeIds }, true);
+    }
+    chat.scrollTop = chat.scrollHeight;
+    refreshProgress();
+  } catch {}
+}
+setTimeout(tryResumeConversation, 500);
+
 // ── Progress panel ────────────────────────────────────
 function toggleProgress() {
   const panel = document.getElementById('progressPanel');
@@ -239,7 +268,11 @@ async function refreshProgress() {
   }
   document.getElementById('progressToggle').classList.add('visible');
   try {
-    const res = await fetch(`${API_BASE}/api/progress/${encodeURIComponent(contextId)}`);
+    const uid = document.getElementById('userId').value || '';
+    const progressUrl = uid
+      ? `${API_BASE}/api/progress/${encodeURIComponent(contextId)}?userId=${encodeURIComponent(uid)}`
+      : `${API_BASE}/api/progress/${encodeURIComponent(contextId)}`;
+    const res = await fetch(progressUrl);
     if (!res.ok) return;
     const data = await res.json();
     document.getElementById('progressPct').textContent = data.percentComplete + '%';
