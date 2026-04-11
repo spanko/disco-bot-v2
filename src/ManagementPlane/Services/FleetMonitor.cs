@@ -140,7 +140,6 @@ public class FleetMonitor : BackgroundService
                 {
                     if (sub.Data.Name.StartsWith("stamp-") || sub.Data.Name.StartsWith("Failure-")) continue;
                     var subState = sub.Data.Properties.ProvisioningState?.ToString() ?? "Unknown";
-                    // Friendly names
                     var friendly = sub.Data.Name switch
                     {
                         "deploy-cosmos" => "Cosmos DB",
@@ -154,22 +153,18 @@ public class FleetMonitor : BackgroundService
                     };
                     steps[friendly] = subState;
                 }
-                // Add image import step
-                if (state == "Succeeded" && !steps.ContainsKey("Bot Image"))
-                    steps["Bot Image"] = "Pending";
 
-                // Check if any sub-deployments are still running
-                var allSubsComplete = steps.Values.All(v => v is "Succeeded" or "Failed" or "Pending");
-                if (!allSubsComplete && state == "Succeeded")
+                // If stamp is still Provisioning and subs are still running, just update progress
+                if (stamp.Status == StampStatus.Provisioning)
                 {
-                    // Top-level says Succeeded but subs still running — stay in Provisioning
-                    var updated2 = stamp with { ProvisioningSteps = steps };
-                    await _stampManager.UpdateStampAsync(updated2);
-                    return;
+                    var anyRunning = steps.Values.Any(v => v == "Running");
+                    if (anyRunning || state == "Running")
+                    {
+                        steps["Bot Image"] = "Pending";
+                        await _stampManager.UpdateStampAsync(stamp with { ProvisioningSteps = steps });
+                        return;
+                    }
                 }
-
-                var updated = stamp with { ProvisioningSteps = steps };
-                await _stampManager.UpdateStampAsync(updated);
             }
             catch (Exception ex)
             {
@@ -210,12 +205,14 @@ public class FleetMonitor : BackgroundService
                     await GrantFoundryAccessAsync(stamp, appName, foundryAccountName, foundryRg);
                 }
 
+                steps["Bot Image"] = "Succeeded";
                 var updated = stamp with
                 {
                     Status = StampStatus.Active,
                     ContainerAppFqdn = fqdn ?? stamp.ContainerAppFqdn,
                     ContainerAppName = appName ?? stamp.ContainerAppName,
                     AcrName = acrName ?? stamp.AcrName,
+                    ProvisioningSteps = steps,
                     LastError = null,
                 };
                 await _stampManager.UpdateStampAsync(updated);
