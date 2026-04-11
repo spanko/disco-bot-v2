@@ -14,7 +14,25 @@
   header button { background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; padding: 6px 14px; font-size: 12px; cursor: pointer; margin-left: auto; }
   header button:hover { background: rgba(255,255,255,0.25); }
 
+  .main-area { flex: 1; display: flex; overflow: hidden; }
   .chat-container { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+
+  /* Progress panel */
+  .progress-panel { width: 280px; background: #fff; border-left: 1px solid #e0e0e0; overflow-y: auto; padding: 16px; display: none; flex-shrink: 0; }
+  .progress-panel.open { display: block; }
+  .progress-panel h3 { font-size: 13px; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+  .progress-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .progress-pct { font-size: 28px; font-weight: 700; color: #1a1a2e; }
+  .progress-bar-bg { height: 6px; border-radius: 3px; background: #eee; margin-bottom: 16px; overflow: hidden; }
+  .progress-bar-fill { height: 100%; border-radius: 3px; background: #4caf50; transition: width 0.4s ease; }
+  .area-item { padding: 8px 0; border-bottom: 1px solid #f5f5f5; display: flex; align-items: flex-start; gap: 8px; font-size: 13px; color: #333; }
+  .area-item:last-child { border-bottom: none; }
+  .area-icon { flex-shrink: 0; margin-top: 1px; }
+  .area-icon.covered { color: #4caf50; }
+  .area-icon.pending { color: #ccc; }
+  .progress-toggle { background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; padding: 6px 14px; font-size: 12px; cursor: pointer; display: none; }
+  .progress-toggle:hover { background: rgba(255,255,255,0.25); }
+  .progress-toggle.visible { display: inline-block; }
 
   .message { max-width: 720px; width: 100%; margin: 0 auto; display: flex; gap: 12px; }
   .message.user { flex-direction: row-reverse; }
@@ -70,6 +88,7 @@
   <a href="admin.html" style="color:rgba(255,255,255,0.7);text-decoration:none;font-size:12px;padding:6px 14px;border:1px solid rgba(255,255,255,0.2);border-radius:6px;">Admin</a>
   <a href="dashboard.html" style="color:rgba(255,255,255,0.7);text-decoration:none;font-size:12px;padding:6px 14px;border:1px solid rgba(255,255,255,0.2);border-radius:6px;">Dashboard</a>
   <a href="test.html" style="color:rgba(255,255,255,0.7);text-decoration:none;font-size:12px;padding:6px 14px;border:1px solid rgba(255,255,255,0.2);border-radius:6px;">Test</a>
+  <button class="progress-toggle" id="progressToggle" onclick="toggleProgress()">Progress</button>
   <button onclick="newConversation()">New Chat</button>
 </header>
 
@@ -81,7 +100,18 @@
   <button onclick="confirmContext()" style="padding:10px 24px;font-size:14px;font-weight:600;background:#1a1a2e;color:#fff;border:none;border-radius:8px;cursor:pointer;">Start Session</button>
 </div>
 
+<div class="main-area">
 <div class="chat-container" id="chat"></div>
+<div class="progress-panel" id="progressPanel">
+  <div class="progress-header">
+    <h3>Discovery Progress</h3>
+    <span class="progress-pct" id="progressPct">--</span>
+  </div>
+  <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressBar" style="width:0%"></div></div>
+  <div id="progressAreas"></div>
+  <div style="margin-top:12px;font-size:11px;color:#aaa;" id="progressItems"></div>
+</div>
+</div>
 
 <div class="typing" id="typing">
   <div class="avatar">D</div>
@@ -165,6 +195,12 @@ async function loadContexts() {
     // Restore saved context selection
     const saved = localStorage.getItem('selectedContextId');
     if (saved !== null) select.value = saved;
+
+    // Show progress toggle if a context is selected
+    if (select.value) {
+      document.getElementById('progressToggle').classList.add('visible');
+      refreshProgress();
+    }
   } catch (e) {
     select.innerHTML = '<option value="">Unbounded Discovery</option>';
   }
@@ -187,6 +223,49 @@ document.getElementById('contextId').addEventListener('change', function() {
 });
 
 loadContexts();
+
+// ── Progress panel ────────────────────────────────────
+function toggleProgress() {
+  const panel = document.getElementById('progressPanel');
+  panel.classList.toggle('open');
+  if (panel.classList.contains('open')) refreshProgress();
+}
+
+async function refreshProgress() {
+  const contextId = document.getElementById('contextId').value;
+  if (!contextId) {
+    document.getElementById('progressToggle').classList.remove('visible');
+    return;
+  }
+  document.getElementById('progressToggle').classList.add('visible');
+  try {
+    const res = await fetch(`${API_BASE}/api/progress/${encodeURIComponent(contextId)}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    document.getElementById('progressPct').textContent = data.percentComplete + '%';
+    document.getElementById('progressBar').style.width = data.percentComplete + '%';
+    document.getElementById('progressBar').style.background = data.percentComplete === 100 ? '#4caf50' : data.percentComplete >= 50 ? '#ff9800' : '#2196f3';
+    document.getElementById('progressItems').textContent = data.totalKnowledgeItems + ' knowledge items extracted';
+    document.getElementById('progressAreas').innerHTML = data.areas.map(a =>
+      '<div class="area-item">' +
+        '<span class="area-icon ' + (a.covered ? 'covered' : 'pending') + '">' + (a.covered ? '\u2705' : '\u2B1C') + '</span>' +
+        '<span>' + esc(a.area) + '</span>' +
+      '</div>'
+    ).join('');
+  } catch {}
+}
+
+// Show toggle if context is selected
+document.getElementById('contextId').addEventListener('change', function() {
+  localStorage.setItem('selectedContextId', this.value);
+  if (this.value) {
+    document.getElementById('progressToggle').classList.add('visible');
+    refreshProgress();
+  } else {
+    document.getElementById('progressToggle').classList.remove('visible');
+    document.getElementById('progressPanel').classList.remove('open');
+  }
+});
 
 // Auto-resize textarea
 input.addEventListener('input', () => {
@@ -423,6 +502,9 @@ async function sendMessage() {
       knowledgeIds: data.extractedKnowledgeIds,
       time: elapsed,
     });
+
+    // Refresh progress after extraction
+    if (data.extractedKnowledgeIds?.length > 0) refreshProgress();
   } catch (err) {
     addMessage('agent', `Error: ${err.message}`, {});
     statusEl.textContent = 'Error';

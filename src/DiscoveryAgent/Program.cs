@@ -425,6 +425,45 @@ app.MapGet("/api/knowledge/{contextId}/provenance/{itemId}", async (
 });
 
 // =====================================================================
+// Discovery Progress API
+// =====================================================================
+
+app.MapGet("/api/progress/{contextId}", async (
+    string contextId,
+    IContextManagementService contextService,
+    IKnowledgeStore knowledgeStore) =>
+{
+    var context = await contextService.GetContextAsync(contextId);
+    if (context is null) return Results.NotFound();
+
+    var items = await knowledgeStore.GetByContextAsync(contextId);
+    var allTags = items.SelectMany(i => i.Tags).Select(t => t.ToLowerInvariant()).ToHashSet();
+    var allContent = string.Join(" ", items.Select(i => i.Content.ToLowerInvariant()));
+
+    var areas = context.DiscoveryAreas.Select(area =>
+    {
+        // Match by checking if any knowledge item tags or content relate to this area
+        var areaWords = area.ToLowerInvariant().Split(new[] { ' ', ',', '(', ')' }, StringSplitOptions.RemoveEmptyEntries)
+            .Where(w => w.Length > 3).ToList();
+        var matchCount = areaWords.Count(w => allTags.Any(t => t.Contains(w)) || allContent.Contains(w));
+        var covered = matchCount >= Math.Max(2, areaWords.Count / 2);
+        return new { area, covered, matchScore = areaWords.Count > 0 ? (double)matchCount / areaWords.Count : 0 };
+    }).ToList();
+
+    var coveredCount = areas.Count(a => a.covered);
+    return Results.Ok(new
+    {
+        contextId,
+        contextName = context.Name,
+        totalAreas = areas.Count,
+        coveredAreas = coveredCount,
+        percentComplete = areas.Count > 0 ? (int)Math.Round(100.0 * coveredCount / areas.Count) : 0,
+        areas,
+        totalKnowledgeItems = items.Count,
+    });
+});
+
+// =====================================================================
 // Admin APIs
 // =====================================================================
 
