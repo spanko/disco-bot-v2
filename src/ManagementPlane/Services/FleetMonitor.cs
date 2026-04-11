@@ -158,6 +158,16 @@ public class FleetMonitor : BackgroundService
                 if (state == "Succeeded" && !steps.ContainsKey("Bot Image"))
                     steps["Bot Image"] = "Pending";
 
+                // Check if any sub-deployments are still running
+                var allSubsComplete = steps.Values.All(v => v is "Succeeded" or "Failed" or "Pending");
+                if (!allSubsComplete && state == "Succeeded")
+                {
+                    // Top-level says Succeeded but subs still running — stay in Provisioning
+                    var updated2 = stamp with { ProvisioningSteps = steps };
+                    await _stampManager.UpdateStampAsync(updated2);
+                    return;
+                }
+
                 var updated = stamp with { ProvisioningSteps = steps };
                 await _stampManager.UpdateStampAsync(updated);
             }
