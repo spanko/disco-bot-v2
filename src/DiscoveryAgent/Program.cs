@@ -80,6 +80,7 @@ if (settings.IsLightweight)
             sp.GetRequiredService<IAgentManager>(),
             sp.GetRequiredService<IKnowledgeStore>(),
             sp.GetRequiredService<IUserProfileService>(),
+            sp.GetRequiredService<IContextManagementService>(),
             sp.GetRequiredService<DiscoveryBotSettings>(),
             sp.GetRequiredService<ILogger<LightweightConversationHandler>>(),
             sp.GetService<Database>()));

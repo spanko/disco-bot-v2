@@ -24,6 +24,7 @@ public class LightweightConversationHandler : IConversationHandler
     private readonly IAgentManager _agentManager;
     private readonly IKnowledgeStore _knowledgeStore;
     private readonly IUserProfileService _userProfiles;
+    private readonly IContextManagementService _contextService;
     private readonly DiscoveryBotSettings _settings;
     private readonly ILogger<LightweightConversationHandler> _logger;
     private readonly Container? _turnsContainer;
@@ -33,6 +34,7 @@ public class LightweightConversationHandler : IConversationHandler
         IAgentManager agentManager,
         IKnowledgeStore knowledgeStore,
         IUserProfileService userProfiles,
+        IContextManagementService contextService,
         DiscoveryBotSettings settings,
         ILogger<LightweightConversationHandler> logger,
         Database? cosmosDb = null)
@@ -41,6 +43,7 @@ public class LightweightConversationHandler : IConversationHandler
         _agentManager = agentManager;
         _knowledgeStore = knowledgeStore;
         _userProfiles = userProfiles;
+        _contextService = contextService;
         _settings = settings;
         _logger = logger;
         _turnsContainer = cosmosDb?.GetContainer("conversation-turns");
@@ -80,6 +83,19 @@ public class LightweightConversationHandler : IConversationHandler
             defaultAgent: _agentManager.AgentName);
 
         var responseOptions = new CreateResponseOptions();
+
+        // Inject discovery context as a system message for new conversations
+        if (string.IsNullOrEmpty(request.ConversationId) && !string.IsNullOrEmpty(request.ContextId))
+        {
+            var context = await _contextService.GetContextAsync(request.ContextId);
+            if (context is not null)
+            {
+                var contextMessage = BuildContextSystemMessage(context);
+                responseOptions.InputItems.Add(
+                    ResponseItem.CreateSystemMessageItem(contextMessage));
+                _logger.LogInformation("Injected discovery context: {ContextId}", request.ContextId);
+            }
+        }
 
         // Rebuild history from persisted turns
         var priorTurns = await LoadTurnsAsync(conversationId);
@@ -327,6 +343,51 @@ public class LightweightConversationHandler : IConversationHandler
         {
             _logger.LogWarning(ex, "Failed to save turn for {ConversationId}", turn.ConversationId);
         }
+    }
+
+    private static string BuildContextSystemMessage(DiscoveryContext context)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("[DISCOVERY SESSION CONFIGURATION]");
+        sb.AppendLine($"Project: {context.Name}");
+        sb.AppendLine($"Description: {context.Description}");
+        sb.AppendLine($"Mode: {context.DiscoveryMode}");
+        sb.AppendLine($"Focus Areas: {string.Join(", ", context.DiscoveryAreas)}");
+        sb.AppendLine();
+
+        if (context.KeyQuestions.Count > 0)
+        {
+            sb.AppendLine("[KEY QUESTIONS]");
+            foreach (var q in context.KeyQuestions)
+                sb.AppendLine($"- {q}");
+            sb.AppendLine();
+        }
+
+        if (context.SensitiveAreas.Count > 0)
+        {
+            sb.AppendLine("[SENSITIVE AREAS — handle with care]");
+            foreach (var a in context.SensitiveAreas)
+                sb.AppendLine($"- {a}");
+            sb.AppendLine();
+        }
+
+        if (context.SuccessCriteria.Count > 0)
+        {
+            sb.AppendLine("[SUCCESS CRITERIA]");
+            foreach (var c in context.SuccessCriteria)
+                sb.AppendLine($"- {c}");
+            sb.AppendLine();
+        }
+
+        if (!string.IsNullOrEmpty(context.AgentInstructions))
+        {
+            sb.AppendLine("[AGENT INSTRUCTIONS]");
+            sb.AppendLine(context.AgentInstructions);
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("Begin the discovery session following the instructions above.");
+        return sb.ToString();
     }
 
     private record ToolCallResult(string Output, List<string>? KnowledgeIds);
