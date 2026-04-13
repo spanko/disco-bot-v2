@@ -512,42 +512,39 @@ app.MapPost("/api/manage/context", async (
     return Results.Ok(new { status = "upserted", contextId = context.ContextId });
 });
 
-if (!settings.IsLightweight)
+app.MapGet("/api/manage/questionnaires", async (Database cosmosDb) =>
 {
-    app.MapGet("/api/manage/questionnaires", async (Database cosmosDb) =>
+    var container = cosmosDb.GetContainer("questionnaires");
+    var query = new QueryDefinition("SELECT * FROM c ORDER BY c.uploadedAt DESC");
+    var items = new List<ParsedQuestionnaire>();
+    using var it = container.GetItemQueryIterator<ParsedQuestionnaire>(query);
+    while (it.HasMoreResults) items.AddRange(await it.ReadNextAsync());
+    return Results.Ok(items);
+});
+
+app.MapPost("/api/manage/questionnaire", async (
+    HttpRequest req,
+    Database cosmosDb,
+    ILogger<Program> log) =>
+{
+    var questionnaire = await JsonSerializer.DeserializeAsync<ParsedQuestionnaire>(req.Body, jsonOpts);
+    if (questionnaire is null || string.IsNullOrEmpty(questionnaire.QuestionnaireId))
+        return Results.BadRequest(new { error = "Invalid questionnaire: questionnaireId is required" });
+
+    var container = cosmosDb.GetContainer("questionnaires");
+    var doc = questionnaire with { Id = questionnaire.QuestionnaireId };
+    await container.UpsertItemAsync(doc, new PartitionKey(doc.QuestionnaireId));
+
+    log.LogInformation("Questionnaire upserted: {QuestionnaireId} ({Title})",
+        doc.QuestionnaireId, doc.Title);
+    return Results.Ok(new
     {
-        var container = cosmosDb.GetContainer("questionnaires");
-        var query = new QueryDefinition("SELECT * FROM c ORDER BY c.uploadedAt DESC");
-        var items = new List<ParsedQuestionnaire>();
-        using var it = container.GetItemQueryIterator<ParsedQuestionnaire>(query);
-        while (it.HasMoreResults) items.AddRange(await it.ReadNextAsync());
-        return Results.Ok(items);
+        status = "upserted",
+        questionnaireId = doc.QuestionnaireId,
+        sections = doc.Sections.Count,
+        questions = doc.Questions.Count
     });
-
-    app.MapPost("/api/manage/questionnaire", async (
-        HttpRequest req,
-        Database cosmosDb,
-        ILogger<Program> log) =>
-    {
-        var questionnaire = await JsonSerializer.DeserializeAsync<ParsedQuestionnaire>(req.Body, jsonOpts);
-        if (questionnaire is null || string.IsNullOrEmpty(questionnaire.QuestionnaireId))
-            return Results.BadRequest(new { error = "Invalid questionnaire: questionnaireId is required" });
-
-        var container = cosmosDb.GetContainer("questionnaires");
-        var doc = questionnaire with { Id = questionnaire.QuestionnaireId };
-        await container.UpsertItemAsync(doc, new PartitionKey(doc.QuestionnaireId));
-
-        log.LogInformation("Questionnaire upserted: {QuestionnaireId} ({Title})",
-            doc.QuestionnaireId, doc.Title);
-        return Results.Ok(new
-        {
-            status = "upserted",
-            questionnaireId = doc.QuestionnaireId,
-            sections = doc.Sections.Count,
-            questions = doc.Questions.Count
-        });
-    });
-}
+});
 
 // =====================================================================
 // Document Upload APIs (requires Blob Storage — standard/full mode only)
