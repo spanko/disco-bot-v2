@@ -41,6 +41,14 @@ public class ContextManagementService : IContextManagementService
         _logger.LogInformation("Context updated: {ContextId}", config.ContextId);
     }
 
+    public async Task UpsertContextAsync(DiscoveryContext context)
+    {
+        var container = _cosmosDb.GetContainer("discovery-sessions");
+        var doc = context with { Id = context.ContextId };
+        await container.UpsertItemAsync(doc, new PartitionKey(doc.ContextId));
+        _logger.LogInformation("Context upserted: {ContextId}", doc.ContextId);
+    }
+
     public async Task<List<DiscoveryContext>> ListContextsAsync()
     {
         var container = _cosmosDb.GetContainer("discovery-sessions");

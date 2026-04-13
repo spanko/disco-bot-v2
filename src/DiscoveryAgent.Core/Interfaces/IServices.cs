@@ -55,6 +55,7 @@ public interface IContextManagementService
 {
     Task<DiscoveryContext?> GetContextAsync(string contextId);
     Task UpdateContextAsync(DiscoveryContextConfig config);
+    Task UpsertContextAsync(DiscoveryContext context);
     Task<List<DiscoveryContext>> ListContextsAsync();
 }
 

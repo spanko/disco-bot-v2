@@ -14,6 +14,9 @@ public class NullContextManagementService : IContextManagementService
     public Task UpdateContextAsync(DiscoveryContextConfig config) =>
         Task.CompletedTask;
 
+    public Task UpsertContextAsync(DiscoveryContext context) =>
+        Task.CompletedTask;
+
     public Task<List<DiscoveryContext>> ListContextsAsync() =>
         Task.FromResult(new List<DiscoveryContext>());
 }
