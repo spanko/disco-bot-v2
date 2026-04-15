@@ -148,6 +148,13 @@ const convDisplay = document.getElementById('convDisplay');
 const fileInput = document.getElementById('fileInput');
 const attachmentsEl = document.getElementById('attachments');
 
+// Restore userId from localStorage
+const savedUserId = localStorage.getItem('userId');
+if (savedUserId) document.getElementById('userId').value = savedUserId;
+document.getElementById('userId').addEventListener('change', function() {
+  localStorage.setItem('userId', this.value);
+});
+
 if (conversationId) {
   convDisplay.textContent = `conv: ${conversationId.slice(0, 20)}...`;
   statusEl.textContent = 'Session restored';
@@ -482,6 +489,7 @@ async function sendMessage() {
   }
 
   const userId = document.getElementById('userId').value || 'web-user-1';
+  localStorage.setItem('userId', userId);
   const contextId = document.getElementById('contextId').value || '';
 
   // Gather ready document IDs
