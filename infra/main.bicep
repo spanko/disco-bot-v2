@@ -75,6 +75,7 @@ module cosmos 'modules/cosmos-db.bicep' = {
           { name: 'discovery-sessions', partitionKeyPath: '/contextId' }
           { name: 'questionnaires', partitionKeyPath: '/questionnaireId' }
           { name: 'user-profiles', partitionKeyPath: '/userId' }
+          { name: 'conversation-turns', partitionKeyPath: '/conversationId' }
         ]
       }
     ]

@@ -66,19 +66,34 @@ if (settings.IsLightweight)
             sp.GetRequiredService<CosmosClient>().GetDatabase(settings.CosmosDatabase));
     }
 
-    builder.Services.AddSingleton<IKnowledgeStore, NullKnowledgeStore>();
-    builder.Services.AddSingleton<IKnowledgeQueryService, NullKnowledgeQueryService>();
     if (!string.IsNullOrEmpty(settings.CosmosEndpoint))
     {
+        // Lightweight + Cosmos: use real Cosmos-backed services.
+        // AI Search and Blob Storage are not provisioned in lightweight mode,
+        // but KnowledgeStore/KnowledgeQueryService degrade gracefully without SearchClient.
         builder.Services.AddSingleton<IContextManagementService, ContextManagementService>();
         builder.Services.AddSingleton<IQuestionnaireProcessor, QuestionnaireProcessor>();
+        builder.Services.AddSingleton<IUserProfileService, UserProfileService>();
+        builder.Services.AddSingleton<IKnowledgeStore>(sp =>
+            new KnowledgeStore(
+                sp.GetRequiredService<Database>(),
+                sp.GetRequiredService<ILogger<KnowledgeStore>>(),
+                searchClient: null));
+        builder.Services.AddSingleton<IKnowledgeQueryService>(sp =>
+            new KnowledgeQueryService(
+                sp.GetRequiredService<Database>(),
+                sp.GetRequiredService<ILogger<KnowledgeQueryService>>(),
+                searchClient: null));
     }
     else
     {
+        // Lightweight without Cosmos: everything is no-op.
         builder.Services.AddSingleton<IContextManagementService, NullContextManagementService>();
         builder.Services.AddSingleton<IQuestionnaireProcessor, NullQuestionnaireProcessor>();
+        builder.Services.AddSingleton<IUserProfileService, NullUserProfileService>();
+        builder.Services.AddSingleton<IKnowledgeStore, NullKnowledgeStore>();
+        builder.Services.AddSingleton<IKnowledgeQueryService, NullKnowledgeQueryService>();
     }
-    builder.Services.AddSingleton<IUserProfileService, NullUserProfileService>();
     builder.Services.AddScoped<IConversationHandler>(sp =>
         new LightweightConversationHandler(
             sp.GetRequiredService<AIProjectClient>(),
