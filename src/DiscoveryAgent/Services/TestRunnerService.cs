@@ -122,9 +122,6 @@ public class TestRunnerService
             ("agent", agentResponse.Response)
         };
 
-        // Build respondent system prompt
-        var respondentPrompt = BuildRespondentPrompt(request.Persona, request.ResponseMode);
-
         // Get a plain ChatClient (no agent binding) for the respondent
         var chatClient = _projectClient.OpenAI.GetChatClient(_settings.ModelDeploymentName);
 
@@ -133,6 +130,9 @@ public class TestRunnerService
         {
             // Pace the conversation to avoid rate limits (429)
             await Task.Delay(3000, ct);
+
+            // Rebuild respondent prompt with current coverage so persona steers toward uncovered areas
+            var respondentPrompt = BuildRespondentPrompt(request.Persona, request.ResponseMode, coverage);
 
             // Generate respondent reply with retry on 429
             var respondentReply = await WithRetry(
@@ -231,7 +231,7 @@ public class TestRunnerService
             turnNumber, coverage.CoveragePercent, coverage.CoveredCount, coverage.TotalAreas, conversationId);
     }
 
-    private static string BuildRespondentPrompt(TestPersona persona, string responseMode)
+    private static string BuildRespondentPrompt(TestPersona persona, string responseMode, CoverageResult? coverage = null)
     {
         var modeDescription = responseMode switch
         {
@@ -240,6 +240,30 @@ public class TestRunnerService
             "random" => "Vary your cooperation, length, and specificity randomly across responses. Some answers are short and dismissive, others are detailed and helpful.",
             _ => "Vary your response length naturally. Sometimes give detailed answers, sometimes brief ones. Occasionally say 'I don't know' or go on tangents.",
         };
+
+        var coverageGuidance = "";
+        if (coverage?.Areas is { Count: > 0 })
+        {
+            var covered = coverage.Areas.Where(a => a.Covered).Select(a => a.Area).ToList();
+            var uncovered = coverage.Areas.Where(a => !a.Covered).Select(a => a.Area).ToList();
+
+            if (covered.Count > 0 && uncovered.Count > 0)
+            {
+                coverageGuidance = $"""
+
+                    **Coverage guidance — IMPORTANT:**
+                    The following areas have ALREADY been covered: {string.Join(", ", covered)}.
+                    The following areas have NOT been covered yet: {string.Join(", ", uncovered)}.
+
+                    If the agent keeps asking about already-covered topics, actively steer the conversation
+                    toward uncovered areas. For example, say things like: "I think we've covered that pretty well.
+                    Can we talk about [uncovered topic]?" or "Actually, what I really wanted to discuss is
+                    [uncovered topic]." or "That reminds me of something related to [uncovered topic]."
+
+                    Your goal is to help ensure ALL areas get covered, not just the first few.
+                    """;
+            }
+        }
 
         return $"""
             You are simulating a survey respondent for a team health assessment.
@@ -251,6 +275,7 @@ public class TestRunnerService
 
             **Response mode:** {responseMode}
             - {modeDescription}
+            {coverageGuidance}
 
             **Rules:**
             - Stay in character for the entire conversation.
