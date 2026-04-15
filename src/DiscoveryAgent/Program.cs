@@ -888,17 +888,43 @@ app.MapGet("/api/findings/{contextId}", async (
     string contextId,
     IKnowledgeStore knowledgeStore,
     IContextManagementService contextService,
+    IQuestionnaireProcessor questionnaireProcessor,
     ILogger<Program> log) =>
 {
     var context = await contextService.GetContextAsync(contextId);
     if (context is null) return Results.NotFound(new { error = "Context not found" });
 
+    // Load linked questionnaires to get the full question catalog
+    var allQuestionsFromQuestionnaire = new List<(string questionId, string sectionId, string sectionTitle, string text, int order)>();
+    var sectionTitles = new Dictionary<string, string>();
+
+    foreach (var qId in context.QuestionnaireIds)
+    {
+        var q = await questionnaireProcessor.GetAsync(qId);
+        if (q is null) continue;
+
+        foreach (var section in q.Sections.OrderBy(s => s.Order))
+            sectionTitles[section.SectionId] = section.Title;
+
+        foreach (var question in q.Questions)
+        {
+            var section = q.Sections.FirstOrDefault(s => s.SectionId == question.SectionId);
+            allQuestionsFromQuestionnaire.Add((
+                question.QuestionId.ToLowerInvariant(),
+                question.SectionId,
+                section?.Title ?? question.SectionId,
+                question.Text,
+                question.Order));
+        }
+    }
+
+    // Build question text lookup
+    var questionTextLookup = allQuestionsFromQuestionnaire.ToDictionary(q => q.questionId, q => q.text);
+    var questionSectionLookup = allQuestionsFromQuestionnaire.ToDictionary(q => q.questionId, q => (q.sectionId, q.sectionTitle));
+
     var items = await knowledgeStore.GetByContextAsync(contextId);
-    if (items.Count == 0)
-        return Results.Ok(new { contextId, contextName = context.Name, totalItems = 0, questions = Array.Empty<object>(), sections = Array.Empty<object>() });
 
     // Parse maturity scores and question IDs from tags
-    // Expected tag patterns: "maturity:yes", "maturity:occasionally", "maturity:no", "maturity:n/a", "sa-01", "eo-03"
     var questionPattern = new System.Text.RegularExpressions.Regex(@"^[a-z]{2,4}-\d{2}$");
     var questionScores = new Dictionary<string, List<(string maturity, string content, double confidence, string userId)>>();
 
@@ -917,72 +943,65 @@ app.MapGet("/api/findings/{contextId}", async (
         }
     }
 
-    // Build per-question results
-    var questions = questionScores.Select(kv =>
-    {
-        var scores = kv.Value;
-        // Determine consensus maturity (most common non-unknown score)
-        var maturityCounts = scores
-            .Where(s => s.maturity != "unknown")
-            .GroupBy(s => s.maturity)
-            .OrderByDescending(g => g.Count())
-            .ToList();
+    // Build per-question results — include ALL questions from questionnaire, not just scored ones
+    var allQuestionIds = allQuestionsFromQuestionnaire.Select(q => q.questionId)
+        .Union(questionScores.Keys)
+        .Distinct()
+        .ToList();
 
-        var consensusMaturity = maturityCounts.FirstOrDefault()?.Key ?? "unknown";
-        var avgConfidence = scores.Average(s => s.confidence);
-        var respondentCount = scores.Select(s => s.userId).Distinct().Count();
+    var questions = allQuestionIds.Select(qId =>
+    {
+        var hasScores = questionScores.TryGetValue(qId, out var scores);
+        var maturityCounts = hasScores
+            ? scores!.Where(s => s.maturity != "unknown").GroupBy(s => s.maturity).OrderByDescending(g => g.Count()).ToList()
+            : [];
+        var consensusMaturity = maturityCounts.FirstOrDefault()?.Key ?? "not-assessed";
+        var avgConfidence = hasScores ? Math.Round(scores!.Average(s => s.confidence), 2) : 0.0;
+        var respondentCount = hasScores ? scores!.Select(s => s.userId).Distinct().Count() : 0;
 
         return new
         {
-            questionId = kv.Key,
+            questionId = qId,
+            questionText = questionTextLookup.GetValueOrDefault(qId, ""),
+            sectionId = questionSectionLookup.TryGetValue(qId, out var sec) ? sec.sectionId : qId.Split('-')[0],
+            sectionName = questionSectionLookup.TryGetValue(qId, out var sec2) ? sec2.sectionTitle : "",
             maturity = consensusMaturity,
-            confidence = Math.Round(avgConfidence, 2),
+            confidence = avgConfidence,
             respondentCount,
-            evidence = scores.Select(s => new { s.maturity, s.content, s.confidence, s.userId }).ToList(),
+            evidence = hasScores
+                ? scores!.Select(s => new { s.maturity, s.content, s.confidence, s.userId }).ToList()
+                : [],
         };
-    }).OrderBy(q => q.questionId).ToList();
+    }).OrderBy(q => q.sectionId).ThenBy(q => q.questionId).ToList();
 
-    // Build per-section summaries
-    var sectionMap = new Dictionary<string, string>
-    {
-        ["sa"] = "Strategy & Alignment",
-        ["eo"] = "Execution & Operations",
-        ["cp"] = "Culture & People",
-        ["cm"] = "Change Management",
-        ["gr"] = "Governance & Risk",
-        ["om"] = "Operating Model & Ownership",
-        ["vi"] = "Value Identification",
-        ["dt"] = "Data & Technical Foundation",
-        ["ra"] = "Readiness & Adoption",
-    };
-
+    // Build per-section summaries from questionnaire structure
     var sections = questions
-        .GroupBy(q => q.questionId.Split('-')[0])
+        .GroupBy(q => q.sectionId)
         .Select(g =>
         {
-            var sectionPrefix = g.Key;
             var sectionQuestions = g.ToList();
             var maturityValues = new Dictionary<string, int>
             {
-                ["yes"] = 4, ["occasionally"] = 3, ["no"] = 1, ["n/a"] = 0, ["unknown"] = 0
+                ["yes"] = 4, ["occasionally"] = 3, ["no"] = 1, ["n/a"] = 0, ["unknown"] = 0, ["not-assessed"] = 0
             };
             var scored = sectionQuestions
-                .Where(q => q.maturity != "unknown" && q.maturity != "n/a")
+                .Where(q => q.maturity is not "unknown" and not "n/a" and not "not-assessed")
                 .Select(q => maturityValues.GetValueOrDefault(q.maturity, 0))
                 .ToList();
             var avgScore = scored.Count > 0 ? Math.Round(scored.Average(), 1) : 0;
 
             return new
             {
-                sectionId = sectionPrefix,
-                sectionName = sectionMap.GetValueOrDefault(sectionPrefix, sectionPrefix),
+                sectionId = g.Key,
+                sectionName = sectionQuestions.FirstOrDefault()?.sectionName
+                    ?? sectionTitles.GetValueOrDefault(g.Key, g.Key),
                 questionsTotal = sectionQuestions.Count,
-                questionsCovered = sectionQuestions.Count(q => q.maturity != "unknown"),
+                questionsCovered = sectionQuestions.Count(q => q.maturity is not "not-assessed"),
                 averageScore = avgScore,
                 maxScore = 4.0,
                 maturityBreakdown = sectionQuestions
                     .GroupBy(q => q.maturity)
-                    .ToDictionary(g => g.Key, g => g.Count()),
+                    .ToDictionary(g2 => g2.Key, g2 => g2.Count()),
             };
         })
         .OrderBy(s => s.sectionId)

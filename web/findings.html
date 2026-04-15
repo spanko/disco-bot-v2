@@ -51,6 +51,7 @@
   .pill.no { background: #ffebee; color: #c62828; }
   .pill.na { background: #f5f5f5; color: #999; }
   .pill.unknown { background: #f5f5f5; color: #bbb; }
+  .pill.not-assessed { background: #f5f5f5; color: #bbb; }
 
   /* Questions table */
   .questions-card { background: #fff; border-radius: 10px; padding: 24px; border: 1px solid #e0e0e0; margin-bottom: 24px; }
@@ -127,7 +128,7 @@ function scoreColor(score, max) {
 }
 
 function maturityColor(m) {
-  return { yes: '#4caf50', occasionally: '#ff9800', no: '#f44336', 'n/a': '#ccc', unknown: '#ddd' }[m] || '#ddd';
+  return { yes: '#4caf50', occasionally: '#ff9800', no: '#f44336', 'n/a': '#ccc', unknown: '#ddd', 'not-assessed': '#ddd' }[m] || '#ddd';
 }
 
 async function loadFindings() {
@@ -179,7 +180,7 @@ function renderFindings(data) {
         <div class="stats">
           <div class="stat"><div class="val">${data.totalRespondents}</div><div class="lbl">Respondent${data.totalRespondents !== 1 ? 's' : ''}</div></div>
           <div class="stat"><div class="val">${data.totalItems}</div><div class="lbl">Knowledge Items</div></div>
-          <div class="stat"><div class="val">${data.questions.length}</div><div class="lbl">Questions Scored</div></div>
+          <div class="stat"><div class="val">${data.questions.filter(q => q.maturity !== 'not-assessed').length} / ${data.questions.length}</div><div class="lbl">Questions Assessed</div></div>
           <div class="stat"><div class="val">${data.sections.length}</div><div class="lbl">Sections</div></div>
         </div>
       </div>
@@ -205,30 +206,37 @@ function renderFindings(data) {
       }).join('')}
     </div>
 
-    <div class="questions-card">
-      <h2>Per-Question Breakdown</h2>
-      <table>
-        <thead><tr><th>ID</th><th>Maturity</th><th>Confidence</th><th>Respondents</th><th>Evidence</th></tr></thead>
-        <tbody>
-          ${data.questions.map((q, i) => {
-            const color = maturityColor(q.maturity);
-            const confPct = Math.round(q.confidence * 100);
-            return `<tr>
-              <td><strong>${esc(q.questionId)}</strong></td>
-              <td><span class="pill ${q.maturity}">${q.maturity.toUpperCase()}</span></td>
-              <td>${confPct}% <span class="confidence-bar"><span class="confidence-fill" style="width:${confPct}%;background:${color}"></span></span></td>
-              <td>${q.respondentCount}</td>
-              <td>
-                <span class="evidence-toggle" onclick="toggleEvidence(${i})">Show ${q.evidence.length} item(s)</span>
-                <div class="evidence-list" id="ev-${i}">
-                  ${q.evidence.map(e => `<div class="evidence-item"><span class="pill ${e.maturity}" style="font-size:10px">${e.maturity}</span> ${esc(e.content)}</div>`).join('')}
-                </div>
-              </td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table>
-    </div>
+    ${data.sections.map(s => {
+      const sectionQuestions = data.questions.filter(q => q.sectionId === s.sectionId);
+      if (!sectionQuestions.length) return '';
+      return `<div class="questions-card">
+        <h2>${esc(s.sectionName)}</h2>
+        <table>
+          <thead><tr><th style="width:60px">ID</th><th>Question</th><th style="width:100px">Maturity</th><th style="width:90px">Confidence</th><th style="width:40px">N</th><th>Evidence</th></tr></thead>
+          <tbody>
+            ${sectionQuestions.map((q, i) => {
+              const globalIdx = data.questions.indexOf(q);
+              const color = maturityColor(q.maturity);
+              const confPct = Math.round(q.confidence * 100);
+              const isAssessed = q.maturity !== 'not-assessed';
+              return `<tr style="${!isAssessed ? 'opacity:0.5' : ''}">
+                <td><strong>${esc(q.questionId)}</strong></td>
+                <td>${esc(q.questionText) || '<em style="color:#999">No question text</em>'}</td>
+                <td><span class="pill ${q.maturity}">${q.maturity === 'not-assessed' ? 'NOT ASSESSED' : q.maturity.toUpperCase()}</span></td>
+                <td>${isAssessed ? `${confPct}% <span class="confidence-bar"><span class="confidence-fill" style="width:${confPct}%;background:${color}"></span></span>` : '—'}</td>
+                <td>${isAssessed ? q.respondentCount : '—'}</td>
+                <td>${isAssessed && q.evidence.length
+                  ? `<span class="evidence-toggle" onclick="toggleEvidence(${globalIdx})">Show ${q.evidence.length} item(s)</span>
+                     <div class="evidence-list" id="ev-${globalIdx}">
+                       ${q.evidence.map(e => `<div class="evidence-item"><span class="pill ${e.maturity}" style="font-size:10px">${e.maturity}</span> ${esc(e.content)}</div>`).join('')}
+                     </div>`
+                  : '<span style="color:#ccc">—</span>'}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>`;
+    }).join('')}
   `;
 
   el.innerHTML = html;
