@@ -71,6 +71,10 @@
   .coverage-bar .bar-label .val { font-weight: 600; color: #222; }
   .coverage-bar .bar-track { height: 6px; border-radius: 3px; background: #e8e8e8; overflow: hidden; }
   .coverage-bar .bar-fill { height: 100%; border-radius: 3px; transition: width 0.4s ease; }
+  .area-checklist-item { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px; }
+  .area-checklist-item .area-icon { font-size: 14px; width: 20px; text-align: center; }
+  .area-checklist-item .area-name { color: #333; }
+  .area-checklist-item .area-count { font-size: 11px; color: #999; margin-left: auto; }
   .bar-green { background: #1D9E75; }
   .bar-yellow { background: #BA7517; }
   .bar-red { background: #E24B4A; }
@@ -175,6 +179,7 @@
   </div>
 
   <div id="watchCoverageBars"></div>
+  <div id="areaChecklist" style="margin-bottom:12px;"></div>
 
   <div class="message-area" id="messageArea">
     <div class="empty-state">Configure and start a test to watch the conversation flow</div>
@@ -467,6 +472,24 @@ function renderWatch() {
   const p = run.coveragePercent;
   const colorClass = p === 100 ? 'bar-green' : p >= 50 ? 'bar-yellow' : 'bar-red';
   barsDiv.innerHTML = '<div class="coverage-bar"><div class="bar-label"><span class="name">Overall Coverage</span><span class="val">' + run.coveredAreas + '/' + run.totalAreas + ' areas (' + p + '%)</span></div><div class="bar-track"><div class="bar-fill ' + colorClass + '" style="width:' + p + '%"></div></div></div>';
+
+  // Fetch per-area breakdown and render checklist
+  const contextId = document.getElementById('contextSelect')?.value;
+  if (contextId) {
+    fetch(`${API}/test/coverage/${encodeURIComponent(contextId)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(cov => {
+        if (!cov || !cov.areas) return;
+        const cl = document.getElementById('areaChecklist');
+        cl.innerHTML = cov.areas.map(a =>
+          '<div class="area-checklist-item">' +
+            '<span class="area-icon">' + (a.covered ? '\u2705' : '\u2B1C') + '</span>' +
+            '<span class="area-name">' + esc(a.area) + '</span>' +
+            '<span class="area-count">' + a.itemCount + ' item' + (a.itemCount !== 1 ? 's' : '') + '</span>' +
+          '</div>'
+        ).join('');
+      }).catch(() => {});
+  }
 
   // Messages
   const area = document.getElementById('messageArea');
