@@ -315,7 +315,7 @@ async function loadContexts() {
       const linkedPills = linkedQIds.length
         ? `<div style="margin-top:6px;"><span style="font-size:11px;color:#777;">Questionnaires:</span> ${linkedQIds.map(qid => {
             const q = cachedQuestionnaires.find(x => x.questionnaireId === qid);
-            return `<span class="pill" style="background:#e3f2fd;color:#1565c0;">${esc(q ? q.title : qid)}</span>`;
+            return `<span class="pill" style="background:#e3f2fd;color:#1565c0;">${esc(q ? q.title : qid)} <span onclick="unlinkQuestionnaire('${esc(c.contextId)}','${esc(qid)}')" style="cursor:pointer;margin-left:4px;opacity:0.6;" title="Unlink">&times;</span></span>`;
           }).join('')}</div>`
         : '<div style="margin-top:6px;font-size:11px;color:#999;">No questionnaires linked</div>';
 
@@ -328,7 +328,10 @@ async function loadContexts() {
         : '';
 
       return `<div class="card">
-        <div class="ctx-title">${esc(c.name||c.contextId)}</div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+          <div class="ctx-title">${esc(c.name||c.contextId)}</div>
+          <span onclick="deleteContext('${esc(c.contextId)}')" style="cursor:pointer;color:#c62828;font-size:12px;opacity:0.6;" title="Delete context">&times; Delete</span>
+        </div>
         <div class="ctx-desc">${esc(c.description)}</div>
         <div class="meta-row"><span>Mode: ${esc(c.discoveryMode)}</span><span>ID: ${esc(c.contextId)}</span><span>${c.createdAt?new Date(c.createdAt).toLocaleDateString():''}</span></div>
         ${(c.discoveryAreas||[]).length?`<div class="pill-row">${c.discoveryAreas.map(a=>`<span class="pill">${esc(a)}</span>`).join('')}</div>`:''}
@@ -344,8 +347,26 @@ async function assignQuestionnaire(contextId, questionnaireId) {
   try {
     const res = await fetch(`${API}/manage/context/${contextId}/questionnaire/${questionnaireId}`, { method: 'POST' });
     if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || `HTTP ${res.status}`); }
-    loadContexts(); // refresh
+    loadContexts();
   } catch (err) { alert('Assign failed: ' + err.message); }
+}
+
+async function unlinkQuestionnaire(contextId, questionnaireId) {
+  if (!confirm(`Unlink questionnaire "${questionnaireId}" from this context?`)) return;
+  try {
+    const res = await fetch(`${API}/manage/context/${contextId}/questionnaire/${questionnaireId}`, { method: 'DELETE' });
+    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || `HTTP ${res.status}`); }
+    loadContexts();
+  } catch (err) { alert('Unlink failed: ' + err.message); }
+}
+
+async function deleteContext(contextId) {
+  if (!confirm(`Delete context "${contextId}"? This cannot be undone.`)) return;
+  try {
+    const res = await fetch(`${API}/manage/context/${contextId}`, { method: 'DELETE' });
+    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || `HTTP ${res.status}`); }
+    loadContexts();
+  } catch (err) { alert('Delete failed: ' + err.message); }
 }
 
 function setupDropZone(zoneId, fileInputId, onFile) {

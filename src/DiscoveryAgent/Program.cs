@@ -585,6 +585,63 @@ app.MapPost("/api/manage/context/{contextId}/questionnaire/{questionnaireId}", a
     }
 });
 
+app.MapDelete("/api/manage/context/{contextId}/questionnaire/{questionnaireId}", async (
+    string contextId,
+    string questionnaireId,
+    IContextManagementService contextService,
+    ILogger<Program> log) =>
+{
+    var context = await contextService.GetContextAsync(contextId);
+    if (context is null) return Results.NotFound(new { error = "Context not found" });
+
+    if (!context.QuestionnaireIds.Contains(questionnaireId))
+        return Results.Ok(new { status = "not_linked", contextId, questionnaireId });
+
+    var updated = context with
+    {
+        QuestionnaireIds = context.QuestionnaireIds.Where(q => q != questionnaireId).ToList()
+    };
+    await contextService.UpsertContextAsync(updated);
+    log.LogInformation("Unlinked questionnaire {QuestionnaireId} from context {ContextId}", questionnaireId, contextId);
+    return Results.Ok(new { status = "unlinked", contextId, questionnaireId });
+});
+
+app.MapDelete("/api/manage/context/{contextId}", async (
+    string contextId,
+    Database cosmosDb,
+    ILogger<Program> log) =>
+{
+    try
+    {
+        var container = cosmosDb.GetContainer("discovery-sessions");
+        await container.DeleteItemAsync<object>(contextId, new PartitionKey(contextId));
+        log.LogInformation("Deleted context: {ContextId}", contextId);
+        return Results.Ok(new { status = "deleted", contextId });
+    }
+    catch (CosmosException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+    {
+        return Results.NotFound(new { error = "Context not found" });
+    }
+});
+
+app.MapDelete("/api/manage/questionnaire/{questionnaireId}", async (
+    string questionnaireId,
+    Database cosmosDb,
+    ILogger<Program> log) =>
+{
+    try
+    {
+        var container = cosmosDb.GetContainer("questionnaires");
+        await container.DeleteItemAsync<object>(questionnaireId, new PartitionKey(questionnaireId));
+        log.LogInformation("Deleted questionnaire: {QuestionnaireId}", questionnaireId);
+        return Results.Ok(new { status = "deleted", questionnaireId });
+    }
+    catch (CosmosException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+    {
+        return Results.NotFound(new { error = "Questionnaire not found" });
+    }
+});
+
 // =====================================================================
 // Document Upload APIs (requires Blob Storage — standard/full mode only)
 // =====================================================================
