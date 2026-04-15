@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Discovery Agent — Findings</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif; background: #f0f0f5; min-height: 100vh; color: #1a1a2e; }
+
+  header { background: #1a1a2e; color: #fff; padding: 16px 24px; display: flex; align-items: center; gap: 16px; }
+  header h1 { font-size: 18px; font-weight: 600; }
+  header .nav { display: flex; gap: 8px; margin-left: auto; }
+  header a { color: rgba(255,255,255,0.7); text-decoration: none; font-size: 13px; padding: 6px 14px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.2); }
+  header a:hover, header a.active { color: #fff; background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.4); }
+
+  .toolbar { max-width: 1100px; margin: 20px auto 0; padding: 0 16px; display: flex; gap: 12px; align-items: center; }
+  .toolbar select, .toolbar button { font-family: inherit; font-size: 13px; padding: 8px 14px; border-radius: 6px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
+  .toolbar button { background: #1a1a2e; color: #fff; border: none; font-weight: 600; }
+  .toolbar button:hover { background: #2a2a4e; }
+  .toolbar .status { font-size: 12px; color: #888; margin-left: auto; }
+
+  .container { max-width: 1100px; margin: 16px auto; padding: 0 16px; }
+
+  /* Overall score banner */
+  .score-banner { display: grid; grid-template-columns: 200px 1fr; gap: 24px; background: #fff; border-radius: 12px; padding: 28px 32px; border: 1px solid #e0e0e0; margin-bottom: 20px; }
+  .score-ring { width: 140px; height: 140px; position: relative; margin: 0 auto; }
+  .score-ring svg { transform: rotate(-90deg); }
+  .score-ring .value { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
+  .score-ring .value .num { font-size: 36px; font-weight: 700; }
+  .score-ring .value .label { font-size: 11px; color: #888; }
+  .score-meta h2 { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+  .score-meta .stats { display: flex; gap: 24px; margin-top: 12px; flex-wrap: wrap; }
+  .score-meta .stat { text-align: center; }
+  .score-meta .stat .val { font-size: 24px; font-weight: 700; color: #1a1a2e; }
+  .score-meta .stat .lbl { font-size: 11px; color: #888; margin-top: 2px; }
+
+  /* Section cards */
+  .sections-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .section-card { background: #fff; border-radius: 10px; padding: 20px; border: 1px solid #e0e0e0; position: relative; overflow: hidden; }
+  .section-card .bar { position: absolute; top: 0; left: 0; height: 4px; border-radius: 2px 2px 0 0; }
+  .section-card h3 { font-size: 14px; font-weight: 600; margin-bottom: 8px; margin-top: 4px; }
+  .section-card .section-score { font-size: 28px; font-weight: 700; }
+  .section-card .section-detail { font-size: 12px; color: #888; margin-top: 4px; }
+  .section-card .maturity-pills { display: flex; gap: 4px; margin-top: 10px; flex-wrap: wrap; }
+
+  .pill { display: inline-block; font-size: 11px; padding: 3px 8px; border-radius: 10px; font-weight: 600; }
+  .pill.yes { background: #e8f5e9; color: #2e7d32; }
+  .pill.occasionally { background: #fff3e0; color: #e65100; }
+  .pill.no { background: #ffebee; color: #c62828; }
+  .pill.na { background: #f5f5f5; color: #999; }
+  .pill.unknown { background: #f5f5f5; color: #bbb; }
+
+  /* Questions table */
+  .questions-card { background: #fff; border-radius: 10px; padding: 24px; border: 1px solid #e0e0e0; margin-bottom: 24px; }
+  .questions-card h2 { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #555; margin-bottom: 16px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 10px 12px; border-bottom: 2px solid #e0e0e0; color: #555; font-weight: 600; }
+  td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+  tr:hover td { background: #fafafa; }
+  .evidence-toggle { color: #1a1a2e; cursor: pointer; font-size: 12px; text-decoration: underline; }
+  .evidence-list { display: none; margin-top: 8px; font-size: 12px; color: #555; }
+  .evidence-list.open { display: block; }
+  .evidence-item { padding: 6px 0; border-bottom: 1px solid #f5f5f5; }
+  .evidence-item:last-child { border: none; }
+  .confidence-bar { width: 60px; height: 6px; background: #eee; border-radius: 3px; display: inline-block; vertical-align: middle; margin-left: 6px; }
+  .confidence-fill { height: 100%; border-radius: 3px; }
+
+  .empty-state { text-align: center; padding: 60px 20px; color: #888; }
+  .empty-state h2 { font-size: 18px; margin-bottom: 8px; color: #555; }
+  .empty-state p { font-size: 13px; line-height: 1.6; max-width: 480px; margin: 0 auto; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Findings</h1>
+  <div class="nav">
+    <a href="index.html">Chat</a>
+    <a href="admin.html">Admin</a>
+    <a href="dashboard.html">Dashboard</a>
+    <a href="test.html">Test</a>
+    <a href="findings.html" class="active">Findings</a>
+  </div>
+</header>
+
+<div class="toolbar">
+  <select id="contextSelect"><option value="">Select a context...</option></select>
+  <button onclick="loadFindings()">Load Findings</button>
+  <span class="status" id="statusText"></span>
+</div>
+
+<div class="container" id="content">
+  <div class="empty-state">
+    <h2>Select a context to view findings</h2>
+    <p>Run a discovery session or test harness first, then select the context above to see aggregated maturity scores across all respondents.</p>
+  </div>
+</div>
+
+<script>
+const API = window.location.origin + '/api';
+
+// Load contexts on page load
+(async () => {
+  try {
+    const res = await fetch(`${API}/manage/contexts`);
+    if (!res.ok) return;
+    const contexts = await res.json();
+    const sel = document.getElementById('contextSelect');
+    contexts.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.contextId;
+      opt.textContent = c.name || c.contextId;
+      sel.appendChild(opt);
+    });
+  } catch(e) { console.error('Failed to load contexts:', e); }
+})();
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+function scoreColor(score, max) {
+  const pct = score / max;
+  if (pct >= 0.75) return '#4caf50';
+  if (pct >= 0.5) return '#ff9800';
+  return '#f44336';
+}
+
+function maturityColor(m) {
+  return { yes: '#4caf50', occasionally: '#ff9800', no: '#f44336', 'n/a': '#ccc', unknown: '#ddd' }[m] || '#ddd';
+}
+
+async function loadFindings() {
+  const contextId = document.getElementById('contextSelect').value;
+  if (!contextId) return;
+
+  const status = document.getElementById('statusText');
+  status.textContent = 'Loading...';
+
+  try {
+    const res = await fetch(`${API}/findings/${contextId}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    status.textContent = `${data.totalItems} knowledge items from ${data.totalRespondents} respondent(s)`;
+    renderFindings(data);
+  } catch (e) {
+    status.textContent = `Error: ${e.message}`;
+  }
+}
+
+function renderFindings(data) {
+  const el = document.getElementById('content');
+
+  if (!data.totalItems) {
+    el.innerHTML = `<div class="empty-state"><h2>No findings yet</h2><p>Run a discovery session or test harness for context "${esc(data.contextId)}" first. Knowledge items will appear here once the agent extracts them.</p></div>`;
+    return;
+  }
+
+  const overallColor = scoreColor(data.overallScore, data.maxScore);
+  const pct = Math.round((data.overallScore / data.maxScore) * 100);
+  const circumference = 2 * Math.PI * 58;
+  const offset = circumference - (pct / 100) * circumference;
+
+  let html = `
+    <div class="score-banner">
+      <div class="score-ring">
+        <svg width="140" height="140" viewBox="0 0 140 140">
+          <circle cx="70" cy="70" r="58" fill="none" stroke="#eee" stroke-width="10"/>
+          <circle cx="70" cy="70" r="58" fill="none" stroke="${overallColor}" stroke-width="10"
+                  stroke-dasharray="${circumference}" stroke-dashoffset="${offset}" stroke-linecap="round"/>
+        </svg>
+        <div class="value">
+          <div class="num" style="color:${overallColor}">${data.overallScore}</div>
+          <div class="label">/ ${data.maxScore}</div>
+        </div>
+      </div>
+      <div class="score-meta">
+        <h2>${esc(data.contextName)}</h2>
+        <div class="stats">
+          <div class="stat"><div class="val">${data.totalRespondents}</div><div class="lbl">Respondent${data.totalRespondents !== 1 ? 's' : ''}</div></div>
+          <div class="stat"><div class="val">${data.totalItems}</div><div class="lbl">Knowledge Items</div></div>
+          <div class="stat"><div class="val">${data.questions.length}</div><div class="lbl">Questions Scored</div></div>
+          <div class="stat"><div class="val">${data.sections.length}</div><div class="lbl">Sections</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sections-grid">
+      ${data.sections.map(s => {
+        const color = scoreColor(s.averageScore, s.maxScore);
+        const barPct = (s.averageScore / s.maxScore) * 100;
+        const bd = s.maturityBreakdown || {};
+        return `<div class="section-card">
+          <div class="bar" style="width:${barPct}%; background:${color};"></div>
+          <h3>${esc(s.sectionName)}</h3>
+          <div class="section-score" style="color:${color}">${s.averageScore} <span style="font-size:14px;color:#888">/ ${s.maxScore}</span></div>
+          <div class="section-detail">${s.questionsCovered} of ${s.questionsTotal} questions scored</div>
+          <div class="maturity-pills">
+            ${bd.yes ? `<span class="pill yes">${bd.yes} Yes</span>` : ''}
+            ${bd.occasionally ? `<span class="pill occasionally">${bd.occasionally} Occ.</span>` : ''}
+            ${bd.no ? `<span class="pill no">${bd.no} No</span>` : ''}
+            ${bd['n/a'] ? `<span class="pill na">${bd['n/a']} N/A</span>` : ''}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+
+    <div class="questions-card">
+      <h2>Per-Question Breakdown</h2>
+      <table>
+        <thead><tr><th>ID</th><th>Maturity</th><th>Confidence</th><th>Respondents</th><th>Evidence</th></tr></thead>
+        <tbody>
+          ${data.questions.map((q, i) => {
+            const color = maturityColor(q.maturity);
+            const confPct = Math.round(q.confidence * 100);
+            return `<tr>
+              <td><strong>${esc(q.questionId)}</strong></td>
+              <td><span class="pill ${q.maturity}">${q.maturity.toUpperCase()}</span></td>
+              <td>${confPct}% <span class="confidence-bar"><span class="confidence-fill" style="width:${confPct}%;background:${color}"></span></span></td>
+              <td>${q.respondentCount}</td>
+              <td>
+                <span class="evidence-toggle" onclick="toggleEvidence(${i})">Show ${q.evidence.length} item(s)</span>
+                <div class="evidence-list" id="ev-${i}">
+                  ${q.evidence.map(e => `<div class="evidence-item"><span class="pill ${e.maturity}" style="font-size:10px">${e.maturity}</span> ${esc(e.content)}</div>`).join('')}
+                </div>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  el.innerHTML = html;
+}
+
+function toggleEvidence(idx) {
+  const el = document.getElementById(`ev-${idx}`);
+  el.classList.toggle('open');
+}
+</script>
+</body>
+</html>

@@ -880,6 +880,130 @@ static TestPersona ResolvePersona(string personaId)
     };
 }
 
+// =====================================================================
+// Findings Summary API — aggregates knowledge items into a scorecard
+// =====================================================================
+
+app.MapGet("/api/findings/{contextId}", async (
+    string contextId,
+    IKnowledgeStore knowledgeStore,
+    IContextManagementService contextService,
+    ILogger<Program> log) =>
+{
+    var context = await contextService.GetContextAsync(contextId);
+    if (context is null) return Results.NotFound(new { error = "Context not found" });
+
+    var items = await knowledgeStore.GetByContextAsync(contextId);
+    if (items.Count == 0)
+        return Results.Ok(new { contextId, contextName = context.Name, totalItems = 0, questions = Array.Empty<object>(), sections = Array.Empty<object>() });
+
+    // Parse maturity scores and question IDs from tags
+    // Expected tag patterns: "maturity:yes", "maturity:occasionally", "maturity:no", "maturity:n/a", "sa-01", "eo-03"
+    var questionPattern = new System.Text.RegularExpressions.Regex(@"^[a-z]{2,4}-\d{2}$");
+    var questionScores = new Dictionary<string, List<(string maturity, string content, double confidence, string userId)>>();
+
+    foreach (var item in items)
+    {
+        var tags = (item.Tags ?? []).Select(t => t.ToLowerInvariant()).ToList();
+        var maturityTag = tags.FirstOrDefault(t => t.StartsWith("maturity:"));
+        var maturity = maturityTag?.Replace("maturity:", "") ?? "unknown";
+        var questionIds = tags.Where(t => questionPattern.IsMatch(t)).ToList();
+
+        foreach (var qId in questionIds)
+        {
+            if (!questionScores.ContainsKey(qId))
+                questionScores[qId] = [];
+            questionScores[qId].Add((maturity, item.Content, item.Confidence, item.SourceUserId));
+        }
+    }
+
+    // Build per-question results
+    var questions = questionScores.Select(kv =>
+    {
+        var scores = kv.Value;
+        // Determine consensus maturity (most common non-unknown score)
+        var maturityCounts = scores
+            .Where(s => s.maturity != "unknown")
+            .GroupBy(s => s.maturity)
+            .OrderByDescending(g => g.Count())
+            .ToList();
+
+        var consensusMaturity = maturityCounts.FirstOrDefault()?.Key ?? "unknown";
+        var avgConfidence = scores.Average(s => s.confidence);
+        var respondentCount = scores.Select(s => s.userId).Distinct().Count();
+
+        return new
+        {
+            questionId = kv.Key,
+            maturity = consensusMaturity,
+            confidence = Math.Round(avgConfidence, 2),
+            respondentCount,
+            evidence = scores.Select(s => new { s.maturity, s.content, s.confidence, s.userId }).ToList(),
+        };
+    }).OrderBy(q => q.questionId).ToList();
+
+    // Build per-section summaries
+    var sectionMap = new Dictionary<string, string>
+    {
+        ["sa"] = "Strategy & Alignment",
+        ["eo"] = "Execution & Operations",
+        ["cp"] = "Culture & People",
+        ["cm"] = "Change Management",
+        ["gr"] = "Governance & Risk",
+        ["om"] = "Operating Model & Ownership",
+        ["vi"] = "Value Identification",
+        ["dt"] = "Data & Technical Foundation",
+        ["ra"] = "Readiness & Adoption",
+    };
+
+    var sections = questions
+        .GroupBy(q => q.questionId.Split('-')[0])
+        .Select(g =>
+        {
+            var sectionPrefix = g.Key;
+            var sectionQuestions = g.ToList();
+            var maturityValues = new Dictionary<string, int>
+            {
+                ["yes"] = 4, ["occasionally"] = 3, ["no"] = 1, ["n/a"] = 0, ["unknown"] = 0
+            };
+            var scored = sectionQuestions
+                .Where(q => q.maturity != "unknown" && q.maturity != "n/a")
+                .Select(q => maturityValues.GetValueOrDefault(q.maturity, 0))
+                .ToList();
+            var avgScore = scored.Count > 0 ? Math.Round(scored.Average(), 1) : 0;
+
+            return new
+            {
+                sectionId = sectionPrefix,
+                sectionName = sectionMap.GetValueOrDefault(sectionPrefix, sectionPrefix),
+                questionsTotal = sectionQuestions.Count,
+                questionsCovered = sectionQuestions.Count(q => q.maturity != "unknown"),
+                averageScore = avgScore,
+                maxScore = 4.0,
+                maturityBreakdown = sectionQuestions
+                    .GroupBy(q => q.maturity)
+                    .ToDictionary(g => g.Key, g => g.Count()),
+            };
+        })
+        .OrderBy(s => s.sectionId)
+        .ToList();
+
+    var overallScored = sections.Where(s => s.averageScore > 0).ToList();
+    var overallScore = overallScored.Count > 0 ? Math.Round(overallScored.Average(s => s.averageScore), 1) : 0;
+
+    return Results.Ok(new
+    {
+        contextId,
+        contextName = context.Name,
+        totalItems = items.Count,
+        totalRespondents = items.Select(i => i.SourceUserId).Distinct().Count(),
+        overallScore,
+        maxScore = 4.0,
+        questions,
+        sections,
+    });
+});
+
 // ── Fallback: serve index.html for SPA-style routing ────────────
 app.MapFallbackToFile("index.html");
 
