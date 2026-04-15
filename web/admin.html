@@ -293,22 +293,58 @@ document.getElementById('searchInput').addEventListener('keydown',e=>{if(e.key==
 // CONTEXTS
 // ═══════════════════════════════════════════════════════════════
 let ctxPendingDoc = null;
+let cachedQuestionnaires = []; // cache for dropdown
 
 async function loadContexts() {
   const el = document.getElementById('ctxList');
   el.innerHTML = '<div class="status-msg">Loading...</div>';
   try {
-    const res = await fetch(`${API}/manage/contexts`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const contexts = await res.json();
+    // Load questionnaires in parallel for the assign dropdown
+    const [ctxRes, qRes] = await Promise.all([
+      fetch(`${API}/manage/contexts`),
+      fetch(`${API}/manage/questionnaires`).catch(() => ({ ok: false }))
+    ]);
+    if (!ctxRes.ok) throw new Error(`HTTP ${ctxRes.status}`);
+    const contexts = await ctxRes.json();
+    if (qRes.ok) cachedQuestionnaires = await qRes.json();
+
     if (!contexts.length) { el.innerHTML = '<div class="status-msg">No contexts found.</div>'; return; }
-    el.innerHTML = contexts.map(c => `<div class="card">
-      <div class="ctx-title">${esc(c.name||c.contextId)}</div>
-      <div class="ctx-desc">${esc(c.description)}</div>
-      <div class="meta-row"><span>Mode: ${esc(c.discoveryMode)}</span><span>ID: ${esc(c.contextId)}</span><span>${c.createdAt?new Date(c.createdAt).toLocaleDateString():''}</span></div>
-      ${(c.discoveryAreas||[]).length?`<div class="pill-row">${c.discoveryAreas.map(a=>`<span class="pill">${esc(a)}</span>`).join('')}</div>`:''}
-    </div>`).join('');
+    el.innerHTML = contexts.map(c => {
+      const linkedQIds = c.questionnaireIds || [];
+      const linkedPills = linkedQIds.length
+        ? `<div style="margin-top:6px;"><span style="font-size:11px;color:#777;">Questionnaires:</span> ${linkedQIds.map(qid => {
+            const q = cachedQuestionnaires.find(x => x.questionnaireId === qid);
+            return `<span class="pill" style="background:#e3f2fd;color:#1565c0;">${esc(q ? q.title : qid)}</span>`;
+          }).join('')}</div>`
+        : '<div style="margin-top:6px;font-size:11px;color:#999;">No questionnaires linked</div>';
+
+      const unlinkedQs = cachedQuestionnaires.filter(q => !linkedQIds.includes(q.questionnaireId));
+      const assignBtn = unlinkedQs.length
+        ? `<select onchange="assignQuestionnaire('${esc(c.contextId)}', this.value); this.selectedIndex=0;" style="font-size:12px;padding:2px 4px;margin-top:4px;">
+            <option value="">+ Assign questionnaire…</option>
+            ${unlinkedQs.map(q => `<option value="${esc(q.questionnaireId)}">${esc(q.title || q.questionnaireId)}</option>`).join('')}
+          </select>`
+        : '';
+
+      return `<div class="card">
+        <div class="ctx-title">${esc(c.name||c.contextId)}</div>
+        <div class="ctx-desc">${esc(c.description)}</div>
+        <div class="meta-row"><span>Mode: ${esc(c.discoveryMode)}</span><span>ID: ${esc(c.contextId)}</span><span>${c.createdAt?new Date(c.createdAt).toLocaleDateString():''}</span></div>
+        ${(c.discoveryAreas||[]).length?`<div class="pill-row">${c.discoveryAreas.map(a=>`<span class="pill">${esc(a)}</span>`).join('')}</div>`:''}
+        ${linkedPills}
+        ${assignBtn}
+      </div>`;
+    }).join('');
   } catch (err) { el.innerHTML = `<div class="status-msg">Error: ${err.message}</div>`; }
+}
+
+async function assignQuestionnaire(contextId, questionnaireId) {
+  if (!questionnaireId) return;
+  try {
+    const res = await fetch(`${API}/manage/context/${contextId}/questionnaire/${questionnaireId}`, { method: 'POST' });
+    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || `HTTP ${res.status}`); }
+    loadContexts(); // refresh
+  } catch (err) { alert('Assign failed: ' + err.message); }
 }
 
 function setupDropZone(zoneId, fileInputId, onFile) {

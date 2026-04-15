@@ -32,6 +32,7 @@ public class ConversationHandler : IConversationHandler
     private readonly IKnowledgeStore _knowledgeStore;
     private readonly IUserProfileService _userProfiles;
     private readonly IContextManagementService _contextService;
+    private readonly IQuestionnaireProcessor _questionnaireProcessor;
     private readonly BlobServiceClient _blobService;
     private readonly Database _cosmosDb;
     private readonly DiscoveryBotSettings _settings;
@@ -43,6 +44,7 @@ public class ConversationHandler : IConversationHandler
         IKnowledgeStore knowledgeStore,
         IUserProfileService userProfiles,
         IContextManagementService contextService,
+        IQuestionnaireProcessor questionnaireProcessor,
         BlobServiceClient blobService,
         Database cosmosDb,
         DiscoveryBotSettings settings,
@@ -53,6 +55,7 @@ public class ConversationHandler : IConversationHandler
         _knowledgeStore = knowledgeStore;
         _userProfiles = userProfiles;
         _contextService = contextService;
+        _questionnaireProcessor = questionnaireProcessor;
         _blobService = blobService;
         _cosmosDb = cosmosDb;
         _settings = settings;
@@ -84,7 +87,16 @@ public class ConversationHandler : IConversationHandler
                 var context = await _contextService.GetContextAsync(request.ContextId);
                 if (context is not null)
                 {
-                    var contextMessage = BuildContextSystemMessage(context);
+                    // Fetch any linked questionnaires
+                    var questionnaires = new List<ParsedQuestionnaire>();
+                    foreach (var qId in context.QuestionnaireIds)
+                    {
+                        var q = await _questionnaireProcessor.GetAsync(qId);
+                        if (q is not null) questionnaires.Add(q);
+                        else _logger.LogWarning("Linked questionnaire not found: {QuestionnaireId}", qId);
+                    }
+
+                    var contextMessage = BuildContextSystemMessage(context, questionnaires);
                     creationOptions.Items.Add(
                         ResponseItem.CreateSystemMessageItem(contextMessage));
                 }
@@ -255,7 +267,8 @@ public class ConversationHandler : IConversationHandler
         );
     }
 
-    private static string BuildContextSystemMessage(DiscoveryContext context)
+    private static string BuildContextSystemMessage(
+        DiscoveryContext context, List<ParsedQuestionnaire>? questionnaires = null)
     {
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("[DISCOVERY SESSION CONFIGURATION]");
@@ -294,6 +307,54 @@ public class ConversationHandler : IConversationHandler
             sb.AppendLine("[AGENT INSTRUCTIONS]");
             sb.AppendLine(context.AgentInstructions);
             sb.AppendLine();
+        }
+
+        // ── Inline linked questionnaires ────────────────────────────
+        if (questionnaires is { Count: > 0 })
+        {
+            foreach (var questionnaire in questionnaires)
+            {
+                sb.AppendLine($"[QUESTIONNAIRE: {questionnaire.Title}]");
+                sb.AppendLine($"Description: {questionnaire.Description}");
+                sb.AppendLine();
+
+                var orderedSections = questionnaire.Sections
+                    .OrderBy(s => s.Order).ToList();
+
+                foreach (var section in orderedSections)
+                {
+                    sb.AppendLine($"## Section: {section.Title}");
+                    if (!string.IsNullOrEmpty(section.Description))
+                        sb.AppendLine($"   {section.Description}");
+
+                    var sectionQuestions = questionnaire.Questions
+                        .Where(q => q.SectionId == section.SectionId)
+                        .OrderBy(q => q.Order)
+                        .ToList();
+
+                    foreach (var question in sectionQuestions)
+                    {
+                        sb.AppendLine($"  [{question.QuestionId}] ({question.QuestionType}) {question.Text}");
+
+                        if (question.Options.Count > 0)
+                            sb.AppendLine($"    Options: {string.Join(" | ", question.Options)}");
+
+                        if (question.FollowUpLogic.Count > 0)
+                        {
+                            foreach (var (trigger, target) in question.FollowUpLogic)
+                                sb.AppendLine($"    If '{trigger}' → follow up with: {target}");
+                        }
+                    }
+                    sb.AppendLine();
+                }
+
+                sb.AppendLine("Guide the conversation through these sections in order. Do NOT read");
+                sb.AppendLine("questions verbatim — ask them conversationally and naturally. Use the");
+                sb.AppendLine("question IDs as tags when calling extract_knowledge so scores can be");
+                sb.AppendLine("aggregated per question later. Call complete_questionnaire_section when");
+                sb.AppendLine("each section is covered.");
+                sb.AppendLine();
+            }
         }
 
         sb.AppendLine("Begin the discovery session following the instructions above.");

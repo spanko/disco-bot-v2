@@ -25,6 +25,7 @@ public class LightweightConversationHandler : IConversationHandler
     private readonly IKnowledgeStore _knowledgeStore;
     private readonly IUserProfileService _userProfiles;
     private readonly IContextManagementService _contextService;
+    private readonly IQuestionnaireProcessor _questionnaireProcessor;
     private readonly DiscoveryBotSettings _settings;
     private readonly ILogger<LightweightConversationHandler> _logger;
     private readonly Container? _turnsContainer;
@@ -35,6 +36,7 @@ public class LightweightConversationHandler : IConversationHandler
         IKnowledgeStore knowledgeStore,
         IUserProfileService userProfiles,
         IContextManagementService contextService,
+        IQuestionnaireProcessor questionnaireProcessor,
         DiscoveryBotSettings settings,
         ILogger<LightweightConversationHandler> logger,
         Database? cosmosDb = null)
@@ -44,6 +46,7 @@ public class LightweightConversationHandler : IConversationHandler
         _knowledgeStore = knowledgeStore;
         _userProfiles = userProfiles;
         _contextService = contextService;
+        _questionnaireProcessor = questionnaireProcessor;
         _settings = settings;
         _logger = logger;
         _turnsContainer = cosmosDb?.GetContainer("conversation-turns");
@@ -84,16 +87,39 @@ public class LightweightConversationHandler : IConversationHandler
 
         var responseOptions = new CreateResponseOptions();
 
-        // Inject discovery context as a system message for new conversations
-        if (string.IsNullOrEmpty(request.ConversationId) && !string.IsNullOrEmpty(request.ContextId))
+        // Build context system message — inject for BOTH new and resumed conversations
+        // because lightweight mode is stateless (no server-side conversation state).
+        ResponseItem? contextSystemItem = null;
+        var effectiveContextId = request.ContextId;
+
+        // For resumed conversations, recover the contextId from the first stored turn
+        if (!string.IsNullOrEmpty(request.ConversationId) && string.IsNullOrEmpty(effectiveContextId))
         {
-            var context = await _contextService.GetContextAsync(request.ContextId);
+            var existingTurns = await LoadTurnsAsync(conversationId);
+            if (existingTurns.Count > 0)
+                effectiveContextId = existingTurns[0].ContextId;
+        }
+
+        if (!string.IsNullOrEmpty(effectiveContextId))
+        {
+            var context = await _contextService.GetContextAsync(effectiveContextId);
             if (context is not null)
             {
-                var contextMessage = BuildContextSystemMessage(context);
-                responseOptions.InputItems.Add(
-                    ResponseItem.CreateSystemMessageItem(contextMessage));
-                _logger.LogInformation("Injected discovery context: {ContextId}", request.ContextId);
+                // Fetch any linked questionnaires
+                var questionnaires = new List<ParsedQuestionnaire>();
+                foreach (var qId in context.QuestionnaireIds)
+                {
+                    var q = await _questionnaireProcessor.GetAsync(qId);
+                    if (q is not null) questionnaires.Add(q);
+                    else _logger.LogWarning("Linked questionnaire not found: {QuestionnaireId}", qId);
+                }
+
+                var contextMessage = BuildContextSystemMessage(context, questionnaires);
+                contextSystemItem = ResponseItem.CreateSystemMessageItem(contextMessage);
+                responseOptions.InputItems.Add(contextSystemItem);
+                _logger.LogInformation(
+                    "Injected discovery context: {ContextId} with {QuestionnaireCount} questionnaire(s)",
+                    effectiveContextId, questionnaires.Count);
             }
         }
 
@@ -155,6 +181,9 @@ public class LightweightConversationHandler : IConversationHandler
             }
 
             var followUpOptions = new CreateResponseOptions();
+            // Re-inject context system message so the agent retains its instructions
+            if (contextSystemItem is not null)
+                followUpOptions.InputItems.Add(contextSystemItem);
             // Include full history + current turn for context
             foreach (var turn in priorTurns)
             {
@@ -345,7 +374,8 @@ public class LightweightConversationHandler : IConversationHandler
         }
     }
 
-    private static string BuildContextSystemMessage(DiscoveryContext context)
+    private static string BuildContextSystemMessage(
+        DiscoveryContext context, List<ParsedQuestionnaire>? questionnaires = null)
     {
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("[DISCOVERY SESSION CONFIGURATION]");
@@ -384,6 +414,54 @@ public class LightweightConversationHandler : IConversationHandler
             sb.AppendLine("[AGENT INSTRUCTIONS]");
             sb.AppendLine(context.AgentInstructions);
             sb.AppendLine();
+        }
+
+        // ── Inline linked questionnaires ────────────────────────────
+        if (questionnaires is { Count: > 0 })
+        {
+            foreach (var questionnaire in questionnaires)
+            {
+                sb.AppendLine($"[QUESTIONNAIRE: {questionnaire.Title}]");
+                sb.AppendLine($"Description: {questionnaire.Description}");
+                sb.AppendLine();
+
+                var orderedSections = questionnaire.Sections
+                    .OrderBy(s => s.Order).ToList();
+
+                foreach (var section in orderedSections)
+                {
+                    sb.AppendLine($"## Section: {section.Title}");
+                    if (!string.IsNullOrEmpty(section.Description))
+                        sb.AppendLine($"   {section.Description}");
+
+                    var sectionQuestions = questionnaire.Questions
+                        .Where(q => q.SectionId == section.SectionId)
+                        .OrderBy(q => q.Order)
+                        .ToList();
+
+                    foreach (var question in sectionQuestions)
+                    {
+                        sb.AppendLine($"  [{question.QuestionId}] ({question.QuestionType}) {question.Text}");
+
+                        if (question.Options.Count > 0)
+                            sb.AppendLine($"    Options: {string.Join(" | ", question.Options)}");
+
+                        if (question.FollowUpLogic.Count > 0)
+                        {
+                            foreach (var (trigger, target) in question.FollowUpLogic)
+                                sb.AppendLine($"    If '{trigger}' → follow up with: {target}");
+                        }
+                    }
+                    sb.AppendLine();
+                }
+
+                sb.AppendLine("Guide the conversation through these sections in order. Do NOT read");
+                sb.AppendLine("questions verbatim — ask them conversationally and naturally. Use the");
+                sb.AppendLine("question IDs as tags when calling extract_knowledge so scores can be");
+                sb.AppendLine("aggregated per question later. Call complete_questionnaire_section when");
+                sb.AppendLine("each section is covered.");
+                sb.AppendLine();
+            }
         }
 
         sb.AppendLine("Begin the discovery session following the instructions above.");

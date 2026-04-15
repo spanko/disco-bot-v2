@@ -69,10 +69,15 @@ if (settings.IsLightweight)
     builder.Services.AddSingleton<IKnowledgeStore, NullKnowledgeStore>();
     builder.Services.AddSingleton<IKnowledgeQueryService, NullKnowledgeQueryService>();
     if (!string.IsNullOrEmpty(settings.CosmosEndpoint))
+    {
         builder.Services.AddSingleton<IContextManagementService, ContextManagementService>();
+        builder.Services.AddSingleton<IQuestionnaireProcessor, QuestionnaireProcessor>();
+    }
     else
+    {
         builder.Services.AddSingleton<IContextManagementService, NullContextManagementService>();
-    builder.Services.AddSingleton<IQuestionnaireProcessor, NullQuestionnaireProcessor>();
+        builder.Services.AddSingleton<IQuestionnaireProcessor, NullQuestionnaireProcessor>();
+    }
     builder.Services.AddSingleton<IUserProfileService, NullUserProfileService>();
     builder.Services.AddScoped<IConversationHandler>(sp =>
         new LightweightConversationHandler(
@@ -81,6 +86,7 @@ if (settings.IsLightweight)
             sp.GetRequiredService<IKnowledgeStore>(),
             sp.GetRequiredService<IUserProfileService>(),
             sp.GetRequiredService<IContextManagementService>(),
+            sp.GetRequiredService<IQuestionnaireProcessor>(),
             sp.GetRequiredService<DiscoveryBotSettings>(),
             sp.GetRequiredService<ILogger<LightweightConversationHandler>>(),
             sp.GetService<Database>()));
@@ -545,6 +551,23 @@ app.MapPost("/api/manage/questionnaire", async (
         sections = doc.Sections.Count,
         questions = doc.Questions.Count
     });
+});
+
+app.MapPost("/api/manage/context/{contextId}/questionnaire/{questionnaireId}", async (
+    string contextId,
+    string questionnaireId,
+    IQuestionnaireProcessor questionnaireProcessor,
+    ILogger<Program> log) =>
+{
+    try
+    {
+        await questionnaireProcessor.AssignToContextAsync(questionnaireId, contextId);
+        return Results.Ok(new { status = "assigned", contextId, questionnaireId });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.NotFound(new { error = ex.Message });
+    }
 });
 
 // =====================================================================
